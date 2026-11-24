@@ -18,11 +18,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--config", default="configs/train.yaml")
     p.add_argument("--manifest", required=True)
+    p.add_argument("--mask-manifest", default=None, help="CSV with a lesion_mask column; donor masks are transferred into healthy-image patches")
     p.add_argument("--output", default="checkpoints")
     args = p.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset = HealthyT1Dataset(args.manifest, tuple(cfg["patch_size"]), cfg["samples_per_scan"], tuple(cfg["spacing_mm"]))
+    dataset = HealthyT1Dataset(args.manifest, tuple(cfg["patch_size"]), cfg["samples_per_scan"],
+                               tuple(cfg["spacing_mm"]), args.mask_manifest)
     loader = DataLoader(dataset, batch_size=cfg["batch_size"], shuffle=True,
                         num_workers=cfg["num_workers"], pin_memory=device.type == "cuda")
     model_cfg = {k: cfg[k] for k in ("channels", "attention_levels", "num_head_channels", "num_res_blocks")}
@@ -60,7 +62,8 @@ def main():
             bar.set_postfix(loss=f"{float(loss.detach()):.4f}")
         state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
                  "epoch": epoch + 1, "step": step, "model_config": model_cfg,
-                 "training_config": cfg, "method": "conditional_rectified_flow"}
+                 "training_config": cfg, "method": "conditional_rectified_flow",
+                 "mask_manifest": args.mask_manifest}
         torch.save(state, out / "last.pt")
         print(f"epoch={epoch+1} mean_masked_velocity_mse={running/max(1,len(loader)):.6f}")
 

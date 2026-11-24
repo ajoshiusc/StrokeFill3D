@@ -20,7 +20,7 @@ Synthetic shapes are an initial mask distribution. For stronger stroke realism, 
 
 The ATLAS stroke dataset can provide realistic lesion-mask shapes, but current releases have access/use requirements. ATLAS v2 access is through ICPSR with data-use requirements; ATLAS v3 requires accepting terms and completing its access process. Follow the dataset owner workflow; this repo includes no patient data. See `docs/DATA.md` and stage authorized scans under `/deneb_disk/data/stroke_inpainting/`.
 
-Create a CSV with a `healthy_t1` column and absolute paths to authorized scans. Split by subject and preferably site before training; never split patches from one scan across train/validation.
+Create a CSV with a `healthy_t1` column and absolute paths to authorized healthy targets. This project can now use a separate CSV with a `lesion_mask` column to sample ATLAS3 mask shapes and transfer them into target-image patches. The mask shapes are randomly flipped/rotated and placed in foreground; they are not anatomically registered to each target. For anatomically faithful lesion placement, register the healthy targets to the ATLAS MNI template before training. Split by subject and preferably site before training; never split patches from one scan across train/validation.
 
 ## Install
 
@@ -31,7 +31,15 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-Install CUDA-enabled PyTorch compatible with the target machine before installing this package. Confirm CUDA visibility on the host. Defaults use 48³ patches, batch size 1, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. On a 4090, increase patch size and channels after a memory check.
+The 2060 host has driver 550.163.01 (CUDA 12.4), so use the matching PyTorch 2.6.0 CUDA 12.4 wheel before installing the project:
+
+```bash
+python -m pip install torch==2.6.0 torchvision==0.21.0 \
+  --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -e .
+```
+
+Confirm `torch.cuda.is_available()` before training. Defaults use 48³ patches, batch size 1, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. On a 4090, increase patch size and channels after a memory check.
 
 ## Train
 
@@ -53,7 +61,7 @@ strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
 
 ## Limitations and validation checklist
 
-- Synthetic masks do not represent every real stroke shape. Validate across lesion sizes, locations, and sites; use authorized real lesion masks to improve the mask sampler.
+- ATLAS3 mask-bank sampling preserves real lesion morphology, but this implementation randomly places each donor shape in the target patch rather than anatomically registering it to that scan. Validate across lesion sizes, locations, and sites.
 - A realistic-looking sample can still be anatomically wrong. Report masked MAE/SSIM, boundary error, and outside-mask identity error; assess multiple generated samples and site-held-out cases.
 - T1 intensities are percentile-normalized and not calibrated across scanners.
 - The model is trained from scratch; dataset size and diversity matter. Do not infer clinical performance from synthetic validation.

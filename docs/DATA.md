@@ -8,7 +8,7 @@ No MRI data is included. Keep scans outside Git in `/deneb_disk/data/stroke_inpa
 - **ATLAS v3.0** has a newer, larger release path, but access requires accepting project terms and requesting an access code. Do not automate around that gate.
 - **OASIS / IXI or local healthy control cohorts** may be suitable healthy-image targets, subject to their current access and use terms. Deface before any public transfer and check each dataset's license.
 
-For realistic mask sampling from ATLAS, register each authorized mask into the same template space as the healthy T1 training scans, preserve the binary geometry with nearest-neighbor resampling, and sample mask volumes during training. Store provenance and terms locally; do not commit subject data or identifying manifests.
+The training CLI accepts a separate `--mask-manifest` CSV with one `lesion_mask` column. It reads the ATLAS3 preprocessed masks and transfers their morphology into healthy-image patches. The current sampler randomly rotates/flips and places each donor mask in the patch; this is shape realism, not subject-specific anatomical registration. For anatomically faithful placements, register healthy targets to the ATLAS MNI template and use the corresponding masks in that shared space. Keep the manifests local and do not commit subject data or identifying paths.
 
 Record dataset version, source URL, access date, license/DUA, subject identifiers, and preprocessing provenance in a local `DATA_PROVENANCE.md`. Never commit scans, masks, manifests with identifying paths, or credentials.
 
