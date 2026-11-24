@@ -86,6 +86,20 @@ class HealthyT1Dataset(Dataset):
 
     def __getitem__(self, index):
         scan_index = index % len(self.paths)
+        retryable = ("No lesion-free patch centers", "Could not sample a lesion-free patch",
+                     "is smaller than patch")
+        for _ in range(32):
+            try:
+                return self._sample_scan(scan_index)
+            except ValueError as exc:
+                if not any(message in str(exc) for message in retryable):
+                    raise
+                # Some scans cannot supply a 64³ clean target patch. Substitute
+                # another scan rather than letting an ineligible item stop a worker.
+                scan_index = random.randrange(len(self.paths))
+        raise RuntimeError("Could not find a scan with a lesion-free target patch after 32 attempts")
+
+    def _sample_scan(self, scan_index):
         vol, exclusion = self._load(scan_index)
         _, d, h, w = vol.shape
         pd, ph, pw = self.patch_size
@@ -122,8 +136,18 @@ class HealthyT1Dataset(Dataset):
         if target is None:
             raise ValueError(f"Could not sample a lesion-free patch from {self.paths[scan_index]}")
         if self.mask_paths:
-            donor = self._load_donor_mask(random.choice(self.mask_paths))
-            mask = place_donor_mask(donor, self.patch_size, target[0] > -0.95)
+            donor = None
+            for _ in range(min(32, len(self.mask_paths))):
+                path = random.choice(self.mask_paths)
+                try:
+                    donor = self._load_donor_mask(path)
+                    break
+                except ValueError as exc:
+                    if "Empty lesion mask" not in str(exc):
+                        raise
+                    self.mask_paths.remove(path)
+            mask = (place_donor_mask(donor, self.patch_size, target[0] > -0.95)
+                    if donor is not None else torch.zeros((1, *self.patch_size), dtype=torch.float32))
             if mask.sum() < 20:
                 mask = make_lesion_mask(target[0].shape)
         else:

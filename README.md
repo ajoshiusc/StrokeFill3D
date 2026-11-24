@@ -45,14 +45,27 @@ python -m pip install torch==2.6.0 torchvision==0.21.0 \
 python -m pip install -e .
 ```
 
-Confirm `torch.cuda.is_available()` before training. Defaults use 64³ patches, batch size 1, two data workers, four sampled patches per scan per epoch, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. The loader bounds its per-worker volume cache to limit host RAM. On a 4090, increase patch size and channels after a memory check.
+Confirm `torch.cuda.is_available()` before training. `configs/atlas3_2060.yaml` is the tested 64³, batch-size-1 profile used on an RTX 2060. It also runs on an RTX 4090 as a conservative starting point. The loader bounds its per-worker volume cache to limit host RAM. On a 4090, increase `patch_size` or batch size only after checking peak memory.
 
 ## Train
 
 ```bash
-strokefill-train --config configs/train.yaml \
-  --manifest /deneb_disk/data/stroke_inpainting/train_manifest.csv \
-  --output /deneb_disk/data/stroke_inpainting/checkpoints
+python scripts/build_atlas3_training_manifests.py
+
+strokefill-train --config configs/atlas3_2060.yaml \
+  --manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_train.csv \
+  --mask-manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_masks_train.csv \
+  --output /deneb_disk/data/stroke_inpainting/runs/atlas3
+```
+
+The trainer saves `last.pt` every 250 optimizer steps. Resume a run with:
+
+```bash
+strokefill-train --config configs/atlas3_2060.yaml \
+  --manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_train.csv \
+  --mask-manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_masks_train.csv \
+  --output /deneb_disk/data/stroke_inpainting/runs/atlas3 \
+  --resume /deneb_disk/data/stroke_inpainting/runs/atlas3/last.pt
 ```
 
 ## Inference

@@ -20,6 +20,7 @@ def main():
     p.add_argument("--manifest", required=True)
     p.add_argument("--mask-manifest", default=None, help="CSV with a lesion_mask column; donor masks are transferred into healthy-image patches")
     p.add_argument("--output", default="checkpoints")
+    p.add_argument("--resume", default=None, help="Resume model and optimizer state from a training checkpoint")
     args = p.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -31,10 +32,32 @@ def main():
     model = RectifiedFlowUNet(**model_cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"])
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda" and cfg["amp"])
+    start_epoch = 0
+    if args.resume:
+        state = torch.load(args.resume, map_location="cpu", weights_only=False)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        if state.get("scaler"):
+            scaler.load_state_dict(state["scaler"])
+        step = int(state.get("step", 0))
+        # Re-run the checkpoint's current epoch from its beginning, which keeps
+        # the epoch schedule simple while retaining learned weights and optimizer.
+        start_epoch = max(0, int(state.get("epoch", 1)) - 1)
+    else:
+        step = 0
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
-    step = 0
+
+    def save_checkpoint(epoch):
+        state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                 "scaler": scaler.state_dict(), "epoch": epoch, "step": step, "model_config": model_cfg,
+                 "training_config": cfg, "method": "conditional_rectified_flow",
+                 "mask_manifest": args.mask_manifest}
+        temporary = out / "last.pt.tmp"
+        torch.save(state, temporary)
+        temporary.replace(out / "last.pt")
+
     model.train()
-    for epoch in range(cfg["epochs"]):
+    for epoch in range(start_epoch, cfg["epochs"]):
         running = 0.0
         bar = tqdm(loader, desc=f"epoch {epoch+1}/{cfg['epochs']}")
         for batch in bar:
@@ -60,11 +83,9 @@ def main():
             scaler.step(optimizer); scaler.update()
             running += float(loss.detach()); step += 1
             bar.set_postfix(loss=f"{float(loss.detach()):.4f}")
-        state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                 "epoch": epoch + 1, "step": step, "model_config": model_cfg,
-                 "training_config": cfg, "method": "conditional_rectified_flow",
-                 "mask_manifest": args.mask_manifest}
-        torch.save(state, out / "last.pt")
+            if cfg.get("checkpoint_every_steps", 0) and step % cfg["checkpoint_every_steps"] == 0:
+                save_checkpoint(epoch + 1)
+        save_checkpoint(epoch + 1)
         print(f"epoch={epoch+1} mean_masked_velocity_mse={running/max(1,len(loader)):.6f}")
 
 if __name__ == "__main__": main()

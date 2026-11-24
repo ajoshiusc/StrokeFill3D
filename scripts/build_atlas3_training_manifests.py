@@ -5,6 +5,9 @@ import csv
 import random
 from pathlib import Path
 
+import nibabel as nib
+import numpy as np
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -15,12 +18,15 @@ def main():
     args = p.parse_args()
     root = Path(args.root)
     rows = []
+    empty_pairs = 0
     suffix = "_desc-brainnorm_T1w.nii.gz"
     for t1 in sorted(root.glob("**/*" + suffix)):
         mask = t1.with_name(t1.name.replace(suffix, "_label-lesion_desc-T1lesion_mask.nii.gz"))
-        if mask.is_file():
+        if mask.is_file() and t1.stat().st_size > 0 and mask.stat().st_size > 0:
             site = t1.relative_to(root).parts[0]
             rows.append({"healthy_t1": str(t1), "exclude_mask": str(mask), "site": site})
+        elif mask.is_file():
+            empty_pairs += 1
     if len(rows) < 2:
         raise SystemExit(f"Found only {len(rows)} paired ATLAS3 files under {root}")
     sites = sorted({r["site"] for r in rows})
@@ -34,11 +40,16 @@ def main():
         with (output / name).open("w", newline="", encoding="utf8") as f:
             writer = csv.DictWriter(f, fieldnames=("healthy_t1", "exclude_mask", "site"))
             writer.writeheader(); writer.writerows(records)
-    # Only masks from training sites contribute donor shapes, preventing site holdout leakage.
+    # Only nonempty masks from training sites contribute donor shapes, preventing
+    # both site holdout leakage and random sampling of empty label files.
+    donor_masks = []
+    for row in train:
+        if np.any(np.asanyarray(nib.load(row["exclude_mask"]).dataobj) > 0):
+            donor_masks.append(row["exclude_mask"])
     with (output / "atlas3_masks_train.csv").open("w", newline="", encoding="utf8") as f:
         writer = csv.writer(f); writer.writerow(["lesion_mask"])
-        writer.writerows((r["exclude_mask"],) for r in train)
-    print(f"paired_scans={len(rows)} train={len(train)} holdout={len(heldout)} heldout_sites={n_holdout}")
+        writer.writerows((mask,) for mask in donor_masks)
+    print(f"paired_scans={len(rows)} skipped_empty_pairs={empty_pairs} train={len(train)} holdout={len(heldout)} heldout_sites={n_holdout} donor_masks={len(donor_masks)} skipped_empty_donors={len(train)-len(donor_masks)}")
     print(f"manifests={output}")
 
 if __name__ == "__main__": main()
