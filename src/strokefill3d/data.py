@@ -87,7 +87,8 @@ class HealthyT1Dataset(Dataset):
     def __getitem__(self, index):
         scan_index = index % len(self.paths)
         retryable = ("No lesion-free patch centers", "Could not sample a lesion-free patch",
-                     "is smaller than patch")
+                     "Could not place a lesion mask in target foreground",
+                     "mask lacks the required patch-edge margin", "is smaller than patch")
         for _ in range(32):
             try:
                 return self._sample_scan(scan_index)
@@ -146,12 +147,24 @@ class HealthyT1Dataset(Dataset):
                     if "Empty lesion mask" not in str(exc):
                         raise
                     self.mask_paths.remove(path)
-            mask = (place_donor_mask(donor, self.patch_size, target[0] > -0.95)
+            foreground = target[0] > -0.95
+            mask = (place_donor_mask(donor, self.patch_size, foreground)
                     if donor is not None else torch.zeros((1, *self.patch_size), dtype=torch.float32))
             if mask.sum() < 20:
-                mask = make_lesion_mask(target[0].shape)
+                mask = make_lesion_mask(target[0].shape, foreground=foreground)
         else:
-            mask = make_lesion_mask(target[0].shape)
+            foreground = target[0] > -0.95
+            mask = make_lesion_mask(target[0].shape, foreground=foreground)
+        mask_voxels = mask[0] > 0
+        overlap = float((mask_voxels & (target[0] > -0.95)).sum()) / max(int(mask_voxels.sum()), 1)
+        if mask_voxels.sum() < 20 or overlap < 0.8:
+            raise ValueError(f"Could not place a lesion mask in target foreground (overlap={overlap:.3f})")
+        mask_coords = torch.nonzero(mask_voxels)
+        edge_margin = 4
+        if bool((mask_coords < edge_margin).any()) or bool(
+            (mask_coords >= torch.as_tensor(self.patch_size, device=mask_coords.device) - edge_margin).any()
+        ):
+            raise ValueError("Lesion mask lacks the required patch-edge margin")
         masked = target.clone()
         masked[0][mask[0] > 0] = 0.0
         return {"image": masked, "mask": mask, "target": target}
@@ -175,44 +188,56 @@ class HealthyT1Dataset(Dataset):
 
 
 def place_donor_mask(donor: np.ndarray, shape, foreground: torch.Tensor) -> torch.Tensor:
-    """Flip/rotate and place a real lesion shape into a nonlesional target patch."""
+    """Transform and place a donor lesion with tissue overlap and edge context."""
     mask_np = donor.astype(bool, copy=True)
     for axis in range(3):
         if random.random() < 0.5:
             mask_np = np.flip(mask_np, axis=axis)
     mask_np = np.rot90(mask_np, k=random.randrange(4), axes=(1, 2)).copy()
-    limit = tuple(max(8, int(n * 0.88)) for n in shape)
+    limit = tuple(max(8, int(n * 0.80)) for n in shape)
     factor = min(1.0, *(limit[k] / mask_np.shape[k] for k in range(3)))
     if factor < 1.0:
         mask_np = zoom(mask_np.astype(np.uint8), factor, order=0) > 0
-    if not mask_np.any() or any(mask_np.shape[k] > shape[k] for k in range(3)):
+    edge_margin = 4
+    if not mask_np.any() or any(mask_np.shape[k] > shape[k] - 2 * edge_margin for k in range(3)):
         return torch.zeros((1, *shape), dtype=torch.float32)
     fg = torch.nonzero(foreground)
     if len(fg) == 0:
-        fg = torch.tensor([[n // 2 for n in shape]])
+        return torch.zeros((1, *shape), dtype=torch.float32)
     foreground_np = foreground.cpu().numpy()
     best = None; best_score = -1.0
-    for _ in range(24):
+    for _ in range(64):
         point = fg[random.randrange(len(fg))].tolist()
-        starts = [max(0, min(int(point[k] - mask_np.shape[k] // 2), shape[k] - mask_np.shape[k])) for k in range(3)]
+        starts = [max(edge_margin, min(int(point[k] - mask_np.shape[k] // 2),
+                                       shape[k] - mask_np.shape[k] - edge_margin)) for k in range(3)]
         canvas = np.zeros(shape, dtype=bool)
         sl = tuple(slice(starts[k], starts[k] + mask_np.shape[k]) for k in range(3))
         canvas[sl] = mask_np
         score = float((canvas & foreground_np).sum()) / max(int(canvas.sum()), 1)
         if score > best_score:
             best, best_score = canvas, score
-        if score >= 0.65:
+        if score >= 0.90:
             break
-    if best is None or best_score < 0.35:
+    if best is None or best_score < 0.80:
         return torch.zeros((1, *shape), dtype=torch.float32)
     return torch.from_numpy(best[None].astype(np.float32))
 
 
-def make_lesion_mask(shape, max_attempts=30) -> torch.Tensor:
-    """Fallback connected irregular mask sampler for runs without ATLAS donors."""
+def make_lesion_mask(shape, max_attempts=120, foreground: torch.Tensor | np.ndarray | None = None,
+                     min_foreground_overlap=0.80, edge_margin=4) -> torch.Tensor:
+    """Sample an irregular lesion within foreground and away from patch borders."""
     d, h, w = map(int, shape)
+    foreground_np = None
+    candidates = None
+    if foreground is not None:
+        foreground_np = (foreground.detach().cpu().numpy() if torch.is_tensor(foreground)
+                         else np.asarray(foreground)).astype(bool)
+        candidates = np.argwhere(foreground_np)
+        if len(candidates) == 0:
+            return torch.zeros((1, d, h, w), dtype=torch.float32)
     for _ in range(max_attempts):
-        center = [random.randint(int(n * .2), max(int(n * .2), int(n * .8))) for n in (d, h, w)]
+        center = (candidates[random.randrange(len(candidates))].tolist() if candidates is not None else
+                  [random.randint(int(n * .2), max(int(n * .2), int(n * .8))) for n in (d, h, w)])
         radii = [random.uniform(max(2, n * .025), max(3, n * .16)) for n in (d, h, w)]
         zz, yy, xx = np.ogrid[:d, :h, :w]
         dist = ((zz-center[0])/radii[0])**2 + ((yy-center[1])/radii[1])**2 + ((xx-center[2])/radii[2])**2
@@ -220,5 +245,14 @@ def make_lesion_mask(shape, max_attempts=30) -> torch.Tensor:
         threshold = np.quantile(noise, random.uniform(.58, .75))
         m = (dist <= 1.0) & (noise > threshold)
         if m.sum() >= 20:
+            coords = np.argwhere(m)
+            if np.any(coords.min(axis=0) < edge_margin) or np.any(
+                coords.max(axis=0) >= np.asarray((d, h, w)) - edge_margin
+            ):
+                continue
+            if foreground_np is not None:
+                overlap = float((m & foreground_np).sum()) / max(int(m.sum()), 1)
+                if overlap < min_foreground_overlap:
+                    continue
             return torch.from_numpy(m[None].astype(np.float32))
     return torch.zeros((1, d, h, w), dtype=torch.float32)

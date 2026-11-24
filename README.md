@@ -14,7 +14,7 @@ Rectified flow is a different generation method, not a guarantee of superior ana
 
 Training can use authorized healthy T1 scans or ATLAS3 scans with their paired lesion masks. For ATLAS3, the loader rejects target patches intersecting the known lesion or a conservative surrounding margin, so the target patch contains nonlesional tissue. Donor masks from training sites are then transferred into those target patches. The model receives (1) a noise-corrupted patch inside the donor mask, (2) the masked T1 context, and (3) the donor mask; it learns to move the noisy region toward the known nonlesional target. Loss is computed inside the donor mask.
 
-The ATLAS3 loader preserves real lesion-mask morphology, but randomly flips, rotates, and places masks rather than registering each donor lesion anatomically to the target brain. The targets are nonlesional patches from stroke scans, not fully healthy control subjects. Validate with site-held-out data and, separately, ethically approved paired longitudinal stroke scans when available.
+The ATLAS3 loader preserves real lesion-mask morphology, but randomly flips, rotates, and places masks rather than registering each donor lesion anatomically to the target brain. It requires at least 80% of each mask to overlap T1 foreground and keeps the mask bounding box at least 4 mm from the patch boundary; samples that fail are resampled. The targets are nonlesional patches from stroke scans, not fully healthy control subjects. Validate with site-held-out data and, separately, ethically approved paired longitudinal stroke scans when available.
 
 ## Data
 
