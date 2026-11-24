@@ -55,7 +55,7 @@ class HealthyT1Dataset(Dataset):
         if min(d, h, w) < min(pd, ph, pw):
             raise ValueError(f"Volume {self.paths[index % len(self.paths)]} is smaller than patch {self.patch_size}; preprocess to a common field of view")
         # Bias patch centers toward foreground, while retaining occasional context-only patches.
-        foreground = torch.nonzero(vol[0].abs() > 0.05)
+        foreground = torch.nonzero(vol[0] > -0.95)
         if len(foreground) and random.random() < 0.85:
             center = foreground[random.randrange(len(foreground))].tolist()
         else:
