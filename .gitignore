@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.nii
+*.nii.gz
+*.npy
+*.pt
+*.pth
+checkpoints/*
+!checkpoints/.gitkeep
+.DS_Store

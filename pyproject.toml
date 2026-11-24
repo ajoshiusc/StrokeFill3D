@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strokefill3d"
+version = "0.1.0"
+description = "MONAI research code for mask-conditioned 3D T1 MRI stroke lesion inpainting"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = [
+  "monai==1.6.1",
+  "torch>=2.6,<2.10",
+  "numpy>=1.26,<3",
+  "nibabel>=5.2,<6",
+  "scipy>=1.12,<2",
+  "PyYAML>=6,<7",
+  "tqdm>=4.66,<5",
+]
+
+[project.scripts]
+strokefill-train = "strokefill3d.train:main"
+strokefill-infer = "strokefill3d.infer:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
