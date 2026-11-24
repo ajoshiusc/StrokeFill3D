@@ -37,7 +37,7 @@ strokefill-train --config configs/train.yaml \
 
 ## Inference
 
-Image and mask must be in the same voxel grid with matching shape and affine. Use the lesion mask in native/preprocessed space matching the scan; inference preserves input voxels outside the mask.
+Provide an image and mask in the same source voxel grid with matching shape and affine. Inference reorients both to RAS and resamples to 1 mm; the output is in that common grid. Voxels outside the mask retain the normalized input values in the resampled grid.
 
 ```bash
 strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \

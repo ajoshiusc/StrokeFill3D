@@ -29,7 +29,7 @@ def main():
                               Orientation(axcodes="RAS"), Spacing(pixdim=(1.,1.,1.), mode="nearest")])
     x = image_transform(args.image).float().unsqueeze(0)
     m = (mask_transform(args.mask) > 0).float().unsqueeze(0)
-    if x.shape[2:] != m.shape[2:]:
+    if x.shape[2:] != m.shape[2:] or not np.allclose(x.affine.cpu().numpy(), m.affine.cpu().numpy(), atol=1e-4):
         raise ValueError("Image and lesion mask do not align after RAS orientation and 1 mm resampling")
     x_masked = x.clone(); x_masked[m > 0] = 0
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
