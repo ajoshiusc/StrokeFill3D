@@ -1,10 +1,10 @@
-patch_size: [96, 96, 96]
+patch_size: [64, 64, 64]
 spacing_mm: [1.0, 1.0, 1.0]
 samples_per_scan: 24
 batch_size: 1
 num_workers: 4
 epochs: 300
-feature_size: 48
+feature_size: 24
 use_checkpoint: true
 amp: true
 learning_rate: 0.0001

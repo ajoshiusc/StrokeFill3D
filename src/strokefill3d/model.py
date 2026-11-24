@@ -12,7 +12,7 @@ class StrokeFillNet(torch.nn.Module):
     reconstruction network. The mask is an explicit conditioning channel.
     """
 
-    def __init__(self, img_size: tuple[int, int, int] = (96, 96, 96),
+    def __init__(self, img_size: tuple[int, int, int] = (64, 64, 64),
                  feature_size: int = 48, use_checkpoint: bool = True):
         super().__init__()
         self.backbone = SwinUNETR(

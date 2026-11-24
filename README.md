@@ -25,7 +25,7 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-Install a CUDA-enabled PyTorch build compatible with the target machine before installing this package. Confirm `torch.cuda.is_available()` and run a one-batch memory check on the target GPU. The current host has no accessible NVIDIA driver; a 4090 is likely appropriate for 96³ patches with batch size 1 and AMP/checkpointing, but adjust patch size/features if memory is insufficient.
+Install a CUDA-enabled PyTorch build compatible with the target machine before installing this package. Confirm `torch.cuda.is_available()` and run a one-batch memory check on the target GPU. The current host has no accessible NVIDIA driver; a 4090 is likely appropriate for 64³ patches, feature size 24, batch size 1, and AMP/checkpointing, but increase to 96³ patches and feature size 48 on the 4090 after a memory check.
 
 ## Train
 
