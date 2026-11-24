@@ -1,3 +1,0 @@
-[console_scripts]
-strokefill-infer = strokefill3d.infer:main
-strokefill-train = strokefill3d.train:main

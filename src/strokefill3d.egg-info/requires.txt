@@ -1,7 +1,0 @@
-monai==1.6.1
-torch<2.10,>=2.6
-numpy<3,>=1.26
-nibabel<6,>=5.2
-scipy<2,>=1.12
-PyYAML<7,>=6
-tqdm<5,>=4.66
