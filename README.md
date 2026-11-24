@@ -39,7 +39,7 @@ python -m pip install torch==2.6.0 torchvision==0.21.0 \
 python -m pip install -e .
 ```
 
-Confirm `torch.cuda.is_available()` before training. Defaults use 48³ patches, batch size 1, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. On a 4090, increase patch size and channels after a memory check.
+Confirm `torch.cuda.is_available()` before training. Defaults use 48³ patches, batch size 1, two data workers, four sampled patches per scan per epoch, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. The loader bounds its per-worker volume cache to limit host RAM. On a 4090, increase patch size and channels after a memory check.
 
 ## Train
 

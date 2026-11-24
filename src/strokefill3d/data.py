@@ -39,7 +39,9 @@ class HealthyT1Dataset(Dataset):
             Spacing(pixdim=spacing, mode="bilinear"),
             ScaleIntensityRangePercentiles(lower=1, upper=99, b_min=-1, b_max=1, clip=True),
         ])
-        self._cache: dict[int, torch.Tensor] = {}
+        # Bound host RAM: each loaded NIfTI can occupy hundreds of MiB after resampling.
+        self._cache: OrderedDict[int, torch.Tensor] = OrderedDict()
+        self.image_cache_size = 2
         self.mask_paths: list[Path] = []
         self.mask_pre = Compose([
             LoadImage(image_only=True, ensure_channel_first=True),
@@ -62,10 +64,14 @@ class HealthyT1Dataset(Dataset):
         return len(self.paths) * self.samples_per_scan
 
     def _load(self, i: int) -> torch.Tensor:
-        if i not in self._cache:
-            tensor = self.pre(str(self.paths[i]))
-            self._cache[i] = tensor.float()
-        return self._cache[i]
+        if i in self._cache:
+            self._cache.move_to_end(i)
+            return self._cache[i]
+        tensor = self.pre(str(self.paths[i])).float()
+        self._cache[i] = tensor
+        while len(self._cache) > self.image_cache_size:
+            self._cache.popitem(last=False)
+        return tensor
 
     def __getitem__(self, index):
         vol = self._load(index % len(self.paths))

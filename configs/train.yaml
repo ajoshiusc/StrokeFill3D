@@ -1,9 +1,9 @@
 patch_size: [48, 48, 48]
 spacing_mm: [1.0, 1.0, 1.0]
-samples_per_scan: 32
+samples_per_scan: 4
 batch_size: 1
-num_workers: 4
-epochs: 400
+num_workers: 2
+epochs: 200
 channels: [32, 64, 128]
 attention_levels: [false, true, true]
 num_head_channels: [0, 32, 32]
