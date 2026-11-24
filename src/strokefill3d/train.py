@@ -1,20 +1,17 @@
-"""Training entry point for synthetic-mask T1 reconstruction."""
+"""Train a MONAI conditional rectified-flow model on synthetic inpainting pairs."""
 from __future__ import annotations
 import argparse
 from pathlib import Path
 import torch
-import torch.nn.functional as F
-import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import yaml
 from .data import HealthyT1Dataset
-from .model import StrokeFillNet
+from .model import RectifiedFlowUNet
 
 
-def masked_l1(pred, target, mask):
-    inside = (torch.abs(pred - target) * mask).sum() / mask.sum().clamp_min(1.0)
-    outside = (torch.abs(pred - target) * (1 - mask)).mean()
-    return inside + 0.05 * outside
+def masked_velocity_mse(pred, target, mask):
+    return ((pred.float() - target.float()).square() * mask).sum() / mask.sum().clamp_min(1.0)
 
 
 def main():
@@ -28,7 +25,8 @@ def main():
     dataset = HealthyT1Dataset(args.manifest, tuple(cfg["patch_size"]), cfg["samples_per_scan"], tuple(cfg["spacing_mm"]))
     loader = DataLoader(dataset, batch_size=cfg["batch_size"], shuffle=True,
                         num_workers=cfg["num_workers"], pin_memory=device.type == "cuda")
-    model = StrokeFillNet(tuple(cfg["patch_size"]), cfg["feature_size"], cfg["use_checkpoint"]).to(device)
+    model_cfg = {k: cfg[k] for k in ("channels", "attention_levels", "num_head_channels", "num_res_blocks")}
+    model = RectifiedFlowUNet(**model_cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"])
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda" and cfg["amp"])
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
@@ -38,20 +36,32 @@ def main():
         running = 0.0
         bar = tqdm(loader, desc=f"epoch {epoch+1}/{cfg['epochs']}")
         for batch in bar:
-            image, mask, target = (batch[k].to(device, non_blocking=True) for k in ("image", "mask", "target"))
+            context = batch["image"].to(device, non_blocking=True)
+            mask = batch["mask"].to(device, non_blocking=True)
+            target = batch["target"].to(device, non_blocking=True)
+            noise = torch.randn_like(target)
+            # Straight interpolation from noise (t=0) to healthy tissue (t=1).
+            t = torch.rand((target.shape[0],), device=device)
+            shape = (target.shape[0], 1, 1, 1, 1)
+            t_view = t.view(shape)
+            interpolant = (1.0 - t_view) * noise + t_view * target
+            sample = torch.where(mask > 0, interpolant, context)
+            velocity_target = target - noise
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=device.type == "cuda" and cfg["amp"]):
-                pred = model(image, mask)
-                loss = masked_l1(pred, target, mask)
+            with torch.autocast(device_type=device.type, dtype=torch.float16,
+                                enabled=device.type == "cuda" and cfg["amp"]):
+                velocity = model(sample, context, mask, t * cfg["time_embedding_scale"])
+                loss = masked_velocity_mse(velocity, velocity_target, mask)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["grad_clip"])
             scaler.step(optimizer); scaler.update()
             running += float(loss.detach()); step += 1
             bar.set_postfix(loss=f"{float(loss.detach()):.4f}")
-        state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "epoch": epoch + 1,
-                 "step": step, "config": cfg}
+        state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                 "epoch": epoch + 1, "step": step, "model_config": model_cfg,
+                 "training_config": cfg, "method": "conditional_rectified_flow"}
         torch.save(state, out / "last.pt")
-        print(f"epoch={epoch+1} mean_loss={running/max(1,len(loader)):.6f}")
+        print(f"epoch={epoch+1} mean_masked_velocity_mse={running/max(1,len(loader)):.6f}")
 
 if __name__ == "__main__": main()

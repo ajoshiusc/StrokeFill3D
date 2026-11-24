@@ -1,31 +1,33 @@
-"""Mask-conditioned 3D SwinUNETR reconstruction model."""
+"""MONAI 3D U-Net backbone for conditional rectified-flow inpainting."""
 from __future__ import annotations
 
 import torch
-from monai.networks.nets import SwinUNETR
+from monai.networks.nets import DiffusionModelUNet
 
 
-class StrokeFillNet(torch.nn.Module):
-    """Predict a healthy T1 volume from a masked image and its binary mask.
+class RectifiedFlowUNet(torch.nn.Module):
+    """Predict the velocity from Gaussian noise to healthy T1 tissue.
 
-    Unlike diffusion-based LIT, this model is a deterministic, single-pass
-    reconstruction network. The mask is an explicit conditioning channel.
+    Inputs are the evolving sample, masked T1 context, and a binary lesion mask.
+    The network predicts only a velocity field; the ODE integration is in infer.py.
     """
 
-    def __init__(self, img_size: tuple[int, int, int] = (64, 64, 64),
-                 feature_size: int = 48, use_checkpoint: bool = True):
+    def __init__(self, channels=(32, 64, 128), attention_levels=(False, True, True),
+                 num_head_channels=(0, 32, 32), num_res_blocks=1):
         super().__init__()
-        self.backbone = SwinUNETR(
-            in_channels=2,
-            out_channels=1,
+        self.backbone = DiffusionModelUNet(
             spatial_dims=3,
-            img_size=img_size,
-            feature_size=feature_size,
-            use_checkpoint=use_checkpoint,
-            use_v2=True,
+            in_channels=3,
+            out_channels=1,
+            num_res_blocks=num_res_blocks,
+            num_channels=tuple(channels),
+            attention_levels=tuple(attention_levels),
+            num_head_channels=tuple(num_head_channels),
+            norm_num_groups=8,
+            norm_eps=1e-6,
         )
 
-    def forward(self, masked_t1: torch.Tensor, lesion_mask: torch.Tensor) -> torch.Tensor:
-        x = torch.cat((masked_t1, lesion_mask.to(masked_t1.dtype)), dim=1)
-        # Bound output to the normalized training range.
-        return torch.tanh(self.backbone(x))
+    def forward(self, sample: torch.Tensor, context: torch.Tensor,
+                lesion_mask: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+        x = torch.cat((sample, context, lesion_mask.to(sample.dtype)), dim=1)
+        return self.backbone(x=x, timesteps=timesteps)

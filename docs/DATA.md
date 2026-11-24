@@ -4,9 +4,11 @@ No MRI data is included. Keep scans outside Git in `/deneb_disk/data/stroke_inpa
 
 ## Candidate sources
 
-- **ATLAS v2.0** contains chronic stroke T1 scans and manually drawn lesion masks; public release access is through ICPSR with data-use requirements. The masks can inform synthetic mask shape sampling, but there is no lesion-free paired target in the ordinary cross-sectional data.
-- **ATLAS v3.0** has a newer larger release path, but access requires agreeing to the project terms and requesting the encryption code. Do not automate around that gate.
-- **OASIS / IXI or local healthy control cohorts** may be suitable healthy-image targets, subject to their current access and use terms. Deface before any public transfer and check the dataset-specific license.
+- **ATLAS v2.0** contains chronic stroke T1 scans and manually drawn lesion masks; access is through ICPSR with data-use requirements. Masks can inform or supply registered synthetic mask shapes, but cross-sectional lesion scans do not include lesion-free paired targets.
+- **ATLAS v3.0** has a newer, larger release path, but access requires accepting project terms and requesting an access code. Do not automate around that gate.
+- **OASIS / IXI or local healthy control cohorts** may be suitable healthy-image targets, subject to their current access and use terms. Deface before any public transfer and check each dataset's license.
+
+For realistic mask sampling from ATLAS, register each authorized mask into the same template space as the healthy T1 training scans, preserve the binary geometry with nearest-neighbor resampling, and sample mask volumes during training. Store provenance and terms locally; do not commit subject data or identifying manifests.
 
 Record dataset version, source URL, access date, license/DUA, subject identifiers, and preprocessing provenance in a local `DATA_PROVENANCE.md`. Never commit scans, masks, manifests with identifying paths, or credentials.
 

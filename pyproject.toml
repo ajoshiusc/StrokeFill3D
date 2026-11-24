@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "strokefill3d"
 version = "0.1.0"
-description = "MONAI research code for mask-conditioned 3D T1 MRI stroke lesion inpainting"
+description = "MONAI rectified-flow research code for mask-conditioned 3D T1 MRI stroke lesion inpainting"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}

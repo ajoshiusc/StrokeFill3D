@@ -1,20 +1,26 @@
 # StrokeFill3D
 
-MONAI research project for **mask-conditioned inpainting of stroke lesions in T1-weighted brain MRI**. The first model is a 3D SwinUNETR that predicts the missing healthy tissue in one forward pass. It is architecturally distinct from FastSurfer-LIT's DDPM-based lesion inpainting. MONAI 1.6.1 includes recent SwinUNETR updates, including optional flash attention support.
+MONAI research project for **mask-conditioned 3D T1-weighted stroke-lesion inpainting**. The primary model is conditional rectified flow with a 3D MONAI U-Net backbone. A deterministic SwinUNETR baseline is retained in `src/strokefill3d/swin_baseline.py`.
 
 > Research software only. It is not validated for clinical decisions, diagnosis, treatment, or patient care. Outputs are model-generated estimates, not recovered ground truth.
 
+## Why rectified flow
+
+The model learns a velocity field along a straight interpolation from Gaussian noise to a healthy T1 target. Training samples a random point on that path and regresses the target velocity. At inference, random noise is placed inside the lesion mask, the observed T1 is clamped outside the mask, and the learned field is integrated over multiple steps. Different noise seeds can produce different plausible fills. This is flow matching / rectified flow, distinct from FastSurfer-LIT's DDPM reverse-noising procedure. MONAI provides an `RFlowScheduler`; this project uses the same straight-path velocity objective with an explicit masked-context update loop. [MONAI RFlowScheduler documentation](https://monai.readthedocs.io/en/1.5.2/networks.html#rflowscheduler) [Original rectified-flow paper](https://arxiv.org/abs/2209.03003)
+
+Rectified flow is a different generation method, not a guarantee of superior anatomical accuracy. Plausible detail depends on training data and validation. Sample variation is intended; inspect multiple seeds where a single reconstruction would otherwise imply certainty.
+
 ## Training design
 
-Training starts from authorized healthy, defaced T1 scans. At each sample, the loader creates a connected irregular synthetic mask, zeros those voxels, and trains the network to reconstruct the original T1. The loss weights masked-region L1 error and lightly penalizes changes outside the mask. The model gets both masked image and mask as input. For actual lesion scans, inference requires a separately supplied lesion mask. If the acquisition, anatomy, lesion appearance, or preprocessing distribution differs from training, outputs may be inaccurate.
+Training starts from authorized healthy, defaced T1 scans. Each sample gets an irregular synthetic mask. The model receives (1) a partly noise-corrupted target inside the mask, (2) the masked T1 context, and (3) the binary mask. It learns to move the noisy masked region toward the original healthy target. Loss is computed inside the mask. This provides known targets for synthetic inpainting validation.
 
-This is a self-supervised synthetic-corruption baseline. Validate on held-out healthy scans with synthetic masks and, separately, on ethically approved paired longitudinal stroke scans when available. ATLAS lesion T1 and lesion masks alone do **not** provide the lesion-free target needed to compute true inpainting accuracy.
+Synthetic shapes are an initial mask distribution. For stronger stroke realism, use authorized, registered lesion masks to calibrate or replace the synthetic mask sampler. ATLAS lesion scans and masks alone do **not** provide lesion-free paired targets for true inpainting accuracy. Evaluate on held-out healthy scans with synthetic masks, and separately on ethically approved paired longitudinal stroke scans when available.
 
 ## Data
 
-The ATLAS stroke dataset can provide realistic lesion-mask shapes for future mask sampling, but ATLAS v2 is distributed under data-use requirements and ATLAS v3 requires accepting terms and an access request. Complete the dataset owner workflow and record its terms before downloading or redistributing anything. This repo intentionally contains no patient data. See `docs/DATA.md` and stage authorized scans under `/deneb_disk/data/stroke_inpainting/`.
+The ATLAS stroke dataset can provide realistic lesion-mask shapes, but current releases have access/use requirements. ATLAS v2 access is through ICPSR with data-use requirements; ATLAS v3 requires accepting terms and completing its access process. Follow the dataset owner workflow; this repo includes no patient data. See `docs/DATA.md` and stage authorized scans under `/deneb_disk/data/stroke_inpainting/`.
 
-Create a CSV with a `healthy_t1` column. Paths can be absolute. Split subjects/cohorts before training; never split patches from a scan across train and validation.
+Create a CSV with a `healthy_t1` column and absolute paths to authorized scans. Split by subject and preferably site before training; never split patches from one scan across train/validation.
 
 ## Install
 
@@ -25,7 +31,7 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-Install a CUDA-enabled PyTorch build compatible with the target machine before installing this package. Confirm `torch.cuda.is_available()` and run a one-batch memory check on the target GPU. The current host has no accessible NVIDIA driver; a 4090 is likely appropriate for 64³ patches, feature size 24, batch size 1, and AMP/checkpointing, but increase to 96³ patches and feature size 48 on the 4090 after a memory check.
+Install CUDA-enabled PyTorch compatible with the target machine before installing this package. Confirm CUDA visibility on the host. Defaults use 48³ patches, batch size 1, mixed precision, and a compact three-level U-Net for the 2060; monitor memory and reduce `patch_size`/channels if needed. On a 4090, increase patch size and channels after a memory check.
 
 ## Train
 
@@ -37,20 +43,21 @@ strokefill-train --config configs/train.yaml \
 
 ## Inference
 
-Provide an image and mask in the same source voxel grid with matching shape and affine. Inference reorients both to RAS and resamples to 1 mm; the output is in that common grid. Voxels outside the mask retain the normalized input values in the resampled grid.
+Image and mask must share the same source voxel grid. The CLI verifies their alignment, then reorients both to RAS and resamples to 1 mm. The output is in that grid. Pixels outside the lesion mask retain the normalized input values. Omit `--seed` for a fresh stochastic completion; pass a fixed seed to reproduce one sample.
 
 ```bash
 strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
-  --checkpoint checkpoints/last.pt --output case_T1w_inpainted.nii.gz
+  --checkpoint checkpoints/last.pt --output case_T1w_inpainted.nii.gz \
+  --steps 24 --seed 1234
 ```
 
 ## Limitations and validation checklist
 
-- Synthetic lesions do not reproduce every T1 stroke appearance. Tune mask distributions to authorized ATLAS masks and evaluate across held-out sites.
-- T1 intensities are only percentile-normalized; the model is not yet calibrated across scanners.
-- The training loader uses NIfTI voxel orientation/resampling; ensure registered, defaced inputs and common field of view.
-- Report masked MAE/SSIM, boundary error, and outside-mask identity error; include lesion size/location strata and site-held-out validation.
-- Compare against the unmodified input and established baselines. Do not claim clinical utility from synthetic validation.
+- Synthetic masks do not represent every real stroke shape. Validate across lesion sizes, locations, and sites; use authorized real lesion masks to improve the mask sampler.
+- A realistic-looking sample can still be anatomically wrong. Report masked MAE/SSIM, boundary error, and outside-mask identity error; assess multiple generated samples and site-held-out cases.
+- T1 intensities are percentile-normalized and not calibrated across scanners.
+- The model is trained from scratch; dataset size and diversity matter. Do not infer clinical performance from synthetic validation.
+- Compare against the retained SwinUNETR baseline and established methods using subject-level splits.
 
 ## License
 
