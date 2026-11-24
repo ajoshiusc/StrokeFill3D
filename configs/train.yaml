@@ -1,12 +1,12 @@
-patch_size: [48, 48, 48]
+patch_size: [64, 64, 64]
 spacing_mm: [1.0, 1.0, 1.0]
 samples_per_scan: 4
 batch_size: 1
 num_workers: 2
 epochs: 200
 channels: [32, 64, 128]
-attention_levels: [false, true, true]
-num_head_channels: [0, 32, 32]
+attention_levels: [false, false, true]
+num_head_channels: [0, 0, 32]
 num_res_blocks: 1
 time_embedding_scale: 1000.0
 amp: true

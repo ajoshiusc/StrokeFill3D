@@ -14,7 +14,7 @@ def main():
     p.add_argument("--image", required=True); p.add_argument("--mask", required=True)
     p.add_argument("--checkpoint", required=True); p.add_argument("--output", required=True)
     p.add_argument("--steps", type=int, default=24)
-    p.add_argument("--roi-size", type=int, nargs=3, default=(48,48,48))
+    p.add_argument("--roi-size", type=int, nargs=3, default=(64,64,64))
     p.add_argument("--overlap", type=float, default=.5)
     p.add_argument("--seed", type=int, default=None, help="Set for repeatable samples; omit for varied completions")
     p.add_argument("--time-embedding-scale", type=float, default=1000.0)

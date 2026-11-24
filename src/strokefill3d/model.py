@@ -12,8 +12,8 @@ class RectifiedFlowUNet(torch.nn.Module):
     The network predicts only a velocity field; the ODE integration is in infer.py.
     """
 
-    def __init__(self, channels=(32, 64, 128), attention_levels=(False, True, True),
-                 num_head_channels=(0, 32, 32), num_res_blocks=1):
+    def __init__(self, channels=(32, 64, 128), attention_levels=(False, False, True),
+                 num_head_channels=(0, 0, 32), num_res_blocks=1):
         super().__init__()
         self.backbone = DiffusionModelUNet(
             spatial_dims=3,
