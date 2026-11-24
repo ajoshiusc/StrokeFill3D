@@ -20,7 +20,7 @@ class RectifiedFlowUNet(torch.nn.Module):
             in_channels=3,
             out_channels=1,
             num_res_blocks=num_res_blocks,
-            num_channels=tuple(channels),
+            channels=tuple(channels),
             attention_levels=tuple(attention_levels),
             num_head_channels=tuple(num_head_channels),
             norm_num_groups=8,
