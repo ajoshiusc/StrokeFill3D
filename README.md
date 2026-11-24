@@ -12,15 +12,21 @@ Rectified flow is a different generation method, not a guarantee of superior ana
 
 ## Training design
 
-Training starts from authorized healthy, defaced T1 scans. Each sample gets an irregular synthetic mask. The model receives (1) a partly noise-corrupted target inside the mask, (2) the masked T1 context, and (3) the binary mask. It learns to move the noisy masked region toward the original healthy target. Loss is computed inside the mask. This provides known targets for synthetic inpainting validation.
+Training can use authorized healthy T1 scans or ATLAS3 scans with their paired lesion masks. For ATLAS3, the loader rejects target patches intersecting the known lesion or a conservative surrounding margin, so the target patch contains nonlesional tissue. Donor masks from training sites are then transferred into those target patches. The model receives (1) a noise-corrupted patch inside the donor mask, (2) the masked T1 context, and (3) the donor mask; it learns to move the noisy region toward the known nonlesional target. Loss is computed inside the donor mask.
 
-Synthetic shapes are an initial mask distribution. For stronger stroke realism, use authorized, registered lesion masks to calibrate or replace the synthetic mask sampler. ATLAS lesion scans and masks alone do **not** provide lesion-free paired targets for true inpainting accuracy. Evaluate on held-out healthy scans with synthetic masks, and separately on ethically approved paired longitudinal stroke scans when available.
+The ATLAS3 loader preserves real lesion-mask morphology, but randomly flips, rotates, and places masks rather than registering each donor lesion anatomically to the target brain. The targets are nonlesional patches from stroke scans, not fully healthy control subjects. Validate with site-held-out data and, separately, ethically approved paired longitudinal stroke scans when available.
 
 ## Data
 
 The ATLAS stroke dataset can provide realistic lesion-mask shapes, but current releases have access/use requirements. ATLAS v2 access is through ICPSR with data-use requirements; ATLAS v3 requires accepting terms and completing its access process. Follow the dataset owner workflow; this repo includes no patient data. See `docs/DATA.md` and stage authorized scans under `/deneb_disk/data/stroke_inpainting/`.
 
-Create a CSV with a `healthy_t1` column and absolute paths to authorized healthy targets. This project can now use a separate CSV with a `lesion_mask` column to sample ATLAS3 mask shapes and transfer them into target-image patches. The mask shapes are randomly flipped/rotated and placed in foreground; they are not anatomically registered to each target. For anatomically faithful lesion placement, register the healthy targets to the ATLAS MNI template before training. Split by subject and preferably site before training; never split patches from one scan across train/validation.
+Build site-held-out ATLAS3 manifests and a training-only donor-mask list:
+
+```bash
+python scripts/build_atlas3_training_manifests.py
+```
+
+This writes `atlas3_train.csv`, `atlas3_holdout.csv`, and `atlas3_masks_train.csv` under `/deneb_disk/data/stroke_inpainting/manifests/`. The trainer accepts the training manifest as `--manifest` and the donor mask file as `--mask-manifest`. The holdout is reserved for a later evaluation step; the current trainer does not yet run validation.
 
 ## Install
 
@@ -31,7 +37,7 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-The 2060 host has driver 550.163.01 (CUDA 12.4), so use the matching PyTorch 2.6.0 CUDA 12.4 wheel before installing the project:
+The 2060 host has driver 550.163.01 (CUDA 12.4). MONAI 1.5.2 supports PyTorch 2.6 and includes rectified-flow support, so use the matching CUDA 12.4 wheel before installing the project:
 
 ```bash
 python -m pip install torch==2.6.0 torchvision==0.21.0 \
@@ -61,7 +67,7 @@ strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
 
 ## Limitations and validation checklist
 
-- ATLAS3 mask-bank sampling preserves real lesion morphology, but this implementation randomly places each donor shape in the target patch rather than anatomically registering it to that scan. Validate across lesion sizes, locations, and sites.
+- ATLAS3 mask-bank sampling preserves real lesion morphology, but randomly places each donor shape rather than anatomically registering it to the target scan. The held-out site manifest is written, but validation is not yet implemented in the trainer.
 - A realistic-looking sample can still be anatomically wrong. Report masked MAE/SSIM, boundary error, and outside-mask identity error; assess multiple generated samples and site-held-out cases.
 - T1 intensities are percentile-normalized and not calibrated across scanners.
 - The model is trained from scratch; dataset size and diversity matter. Do not infer clinical performance from synthetic validation.
