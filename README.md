@@ -68,14 +68,62 @@ strokefill-train --config configs/atlas3_2060.yaml \
   --resume /deneb_disk/data/stroke_inpainting/runs/atlas3/last.pt
 ```
 
+## Cortical recovery fine-tune (RTX 4090)
+
+The first 4090 run completed its configured 20 epochs, but the cortical examples remained mottled. `configs/atlas3_cortical_4090.yaml` continues from that checkpoint with 96³ context, two target patches per scan per epoch, frequent patches centered near the cortical surface, donor masks anchored to cortical/sulcal boundaries, and random 0–2 voxel mask dilation during training. This exposes the model to the mask geometry used at inference and gives it many more examples of intact gyral and sulcal patterns. The 96³ window processes 1.73× as many voxels as 80³; verify peak VRAM on the 4090 before starting the full run.
+
+Run a one-update preflight on the 4090 first. It loads the checkpoint, samples the configured cortical data, runs forward/backward plus one optimizer update, reports peak allocated VRAM, and exits without saving a checkpoint:
+
+```bash
+cd /home/ajoshi/Projects/StrokeFill3D
+source .venv/bin/activate
+PYTHONUNBUFFERED=1 PYTHONPATH=src python -m strokefill3d.train \
+  --config configs/atlas3_cortical_4090.yaml \
+  --manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_train.csv \
+  --mask-manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_masks_train.csv \
+  --output /tmp/atlas3_cortical_preflight \
+  --resume /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_4090_clean/last.pt \
+  --preflight
+```
+
+If the preflight fits, run the separate fine-tune below. It reads the completed checkpoint and writes to a new run directory:
+
+```bash
+cd /home/ajoshi/Projects/StrokeFill3D
+source .venv/bin/activate
+mkdir -p /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_4090_20261124/logs
+set -o pipefail
+PYTHONUNBUFFERED=1 PYTHONPATH=src python -m strokefill3d.train \
+  --config configs/atlas3_cortical_4090.yaml \
+  --manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_train.csv \
+  --mask-manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_masks_train.csv \
+  --output /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_4090_20261124 \
+  --resume /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_4090_clean/last.pt \
+  2>&1 | tee /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_4090_20261124/logs/train.log
+```
+
+After training, preview the held-out cortical case R018/s001 with a two-voxel mask expansion:
+
+```bash
+mkdir -p /deneb_disk/data/stroke_inpainting/evaluation/atlas3_cortical_4090_20261124
+strokefill-infer \
+  --image /deneb_disk/ATLAS3/ATLAS3_Training_Preprocessed/R018/sub-r018s001/ses-1/anat/sub-r018s001_ses-1_space-MNI152NLin2009aSym_desc-brainnorm_T1w.nii.gz \
+  --mask /deneb_disk/ATLAS3/ATLAS3_Training_Preprocessed/R018/sub-r018s001/ses-1/anat/sub-r018s001_ses-1_space-MNI152NLin2009aSym_label-lesion_desc-T1lesion_mask.nii.gz \
+  --checkpoint /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_4090_20261124/last.pt \
+  --output /deneb_disk/data/stroke_inpainting/evaluation/atlas3_cortical_4090_20261124/R018s001_inpainted.nii.gz \
+  --mask-dilation-voxels 2 --steps 48 --seed 2026
+```
+
+Inference now zeros the context channel under the mask, as training does, and defaults its window size from the checkpoint's recorded training patch size. The output path above is an evaluation artifact; it does not share the training run directory.
+
 ## Inference
 
-Image and mask must share the same source voxel grid. The CLI verifies their alignment, then reorients both to RAS and resamples to 1 mm. The output is in that grid. Pixels outside the lesion mask retain the normalized input values. Omit `--seed` for a fresh stochastic completion; pass a fixed seed to reproduce one sample.
+Image and mask must share the same source voxel grid. The CLI verifies their alignment, then reorients both to RAS and resamples to 1 mm. The output is in that grid. Pixels outside the inpainting mask retain the input values. By default, inference uses 48 flow steps and the patch size recorded in the checkpoint; `--roi-size` and `--steps` can override them. `--mask-dilation-voxels N` expands the supplied mask by N voxels. Omit `--seed` for a fresh stochastic completion; pass a fixed seed to reproduce one sample.
 
 ```bash
 strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
   --checkpoint checkpoints/last.pt --output case_T1w_inpainted.nii.gz \
-  --steps 24 --seed 1234
+  --steps 48 --seed 1234
 ```
 
 ## Limitations and validation checklist

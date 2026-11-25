@@ -21,11 +21,20 @@ def main():
     p.add_argument("--mask-manifest", default=None, help="CSV with a lesion_mask column; donor masks are transferred into healthy-image patches")
     p.add_argument("--output", default="checkpoints")
     p.add_argument("--resume", default=None, help="Resume model and optimizer state from a training checkpoint")
+    p.add_argument("--preflight", action="store_true",
+                   help="Run one optimizer update and exit without writing a checkpoint")
     args = p.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset = HealthyT1Dataset(args.manifest, tuple(cfg["patch_size"]), cfg["samples_per_scan"],
-                               tuple(cfg["spacing_mm"]), args.mask_manifest)
+    dataset = HealthyT1Dataset(
+        args.manifest, tuple(cfg["patch_size"]), cfg["samples_per_scan"],
+        tuple(cfg["spacing_mm"]), args.mask_manifest,
+        cortical_patch_probability=cfg.get("cortical_patch_probability", 0.0),
+        cortical_surface_band_voxels=cfg.get("cortical_surface_band_voxels", 6),
+        cortical_placement_probability=cfg.get("cortical_placement_probability", 0.0),
+        cortical_min_foreground_overlap=cfg.get("cortical_min_foreground_overlap", 0.55),
+        max_mask_dilation_voxels=cfg.get("max_mask_dilation_voxels", 0),
+    )
     loader = DataLoader(dataset, batch_size=cfg["batch_size"], shuffle=True,
                         num_workers=cfg["num_workers"], pin_memory=device.type == "cuda")
     model_cfg = {k: cfg[k] for k in ("channels", "attention_levels", "num_head_channels", "num_res_blocks")}
@@ -40,9 +49,17 @@ def main():
         if state.get("scaler"):
             scaler.load_state_dict(state["scaler"])
         step = int(state.get("step", 0))
-        # Re-run the checkpoint's current epoch from its beginning, which keeps
-        # the epoch schedule simple while retaining learned weights and optimizer.
-        start_epoch = max(0, int(state.get("epoch", 1)) - 1)
+        checkpoint_epoch = int(state.get("epoch", 1))
+        previous_samples = int(state.get("training_config", {}).get(
+            "samples_per_scan", cfg["samples_per_scan"]))
+        previous_steps_per_epoch = max(1, len(dataset.paths) * previous_samples)
+        # Step-aligned checkpoints are at an epoch boundary; resume at the next
+        # epoch. Mid-epoch checkpoints replay the current epoch because its sampler
+        # position is not stored.
+        if step > 0 and step % previous_steps_per_epoch == 0:
+            start_epoch = checkpoint_epoch
+        else:
+            start_epoch = max(0, checkpoint_epoch - 1)
     else:
         step = 0
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
@@ -57,6 +74,8 @@ def main():
         temporary.replace(out / "last.pt")
 
     model.train()
+    if args.preflight and device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     for epoch in range(start_epoch, cfg["epochs"]):
         running = 0.0
         bar = tqdm(loader, desc=f"epoch {epoch+1}/{cfg['epochs']}")
@@ -83,6 +102,17 @@ def main():
             scaler.step(optimizer); scaler.update()
             running += float(loss.detach()); step += 1
             bar.set_postfix(loss=f"{float(loss.detach()):.4f}")
+            if args.preflight:
+                if device.type == "cuda":
+                    torch.cuda.synchronize(device)
+                    peak_gib = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                    print(f"preflight_passed device={torch.cuda.get_device_name(device)} "
+                          f"patch={cfg['patch_size']} peak_allocated_gib={peak_gib:.2f} "
+                          f"loss={float(loss.detach()):.6f}", flush=True)
+                else:
+                    print(f"preflight_passed device=cpu patch={cfg['patch_size']} "
+                          f"loss={float(loss.detach()):.6f}; CUDA memory was not checked", flush=True)
+                return
             if cfg.get("checkpoint_every_steps", 0) and step % cfg["checkpoint_every_steps"] == 0:
                 save_checkpoint(epoch + 1)
         save_checkpoint(epoch + 1)

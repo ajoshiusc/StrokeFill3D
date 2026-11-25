@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from scipy.ndimage import distance_transform_edt, gaussian_filter, zoom
+from scipy.ndimage import binary_dilation, distance_transform_edt, gaussian_filter, zoom
 from monai.transforms import Compose, LoadImage, Orientation, ScaleIntensityRangePercentiles, Spacing
 from torch.utils.data import Dataset
 
@@ -22,7 +22,10 @@ class HealthyT1Dataset(Dataset):
     `lesion_mask` paths supplies ATLAS3 donor lesion shapes.
     """
     def __init__(self, manifest: str | Path, patch_size=(64, 64, 64), samples_per_scan=4,
-                 spacing=(1.0, 1.0, 1.0), mask_manifest: str | Path | None = None):
+                 spacing=(1.0, 1.0, 1.0), mask_manifest: str | Path | None = None,
+                 cortical_patch_probability=0.0, cortical_surface_band_voxels=6,
+                 cortical_placement_probability=0.0, cortical_min_foreground_overlap=0.55,
+                 max_mask_dilation_voxels=0):
         with open(manifest, newline="", encoding="utf8") as f:
             rows = list(csv.DictReader(f))
         if not rows or "healthy_t1" not in rows[0]:
@@ -36,6 +39,19 @@ class HealthyT1Dataset(Dataset):
         self.patch_size = tuple(int(x) for x in patch_size)
         self.samples_per_scan = int(samples_per_scan)
         self.spacing = tuple(float(x) for x in spacing)
+        self.cortical_patch_probability = float(cortical_patch_probability)
+        self.cortical_surface_band_voxels = int(cortical_surface_band_voxels)
+        self.cortical_placement_probability = float(cortical_placement_probability)
+        self.cortical_min_foreground_overlap = float(cortical_min_foreground_overlap)
+        self.max_mask_dilation_voxels = int(max_mask_dilation_voxels)
+        for name, value in (("cortical_patch_probability", self.cortical_patch_probability),
+                            ("cortical_placement_probability", self.cortical_placement_probability)):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be in [0, 1]")
+        if self.cortical_surface_band_voxels < 1 or self.max_mask_dilation_voxels < 0:
+            raise ValueError("Surface band must be positive and mask dilation nonnegative")
+        if not 0.0 < self.cortical_min_foreground_overlap <= 1.0:
+            raise ValueError("cortical_min_foreground_overlap must be in (0, 1]")
         self.pre = Compose([
             LoadImage(image_only=True, ensure_channel_first=True),
             Orientation(axcodes="RAS"),
@@ -50,6 +66,8 @@ class HealthyT1Dataset(Dataset):
         # Bound host RAM: each loaded volume can occupy hundreds of MiB after resampling.
         self._cache: OrderedDict[int, tuple[torch.Tensor, torch.Tensor | None]] = OrderedDict()
         self.image_cache_size = 2
+        self._surface_cache: OrderedDict[int, np.ndarray] = OrderedDict()
+        self.surface_cache_size = 2
         self._mask_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self.mask_cache_size = 128
         self.mask_paths: list[Path] = []
@@ -65,6 +83,18 @@ class HealthyT1Dataset(Dataset):
 
     def __len__(self):
         return len(self.paths) * self.samples_per_scan
+
+    def _cortical_candidates(self, scan_index: int, foreground: np.ndarray) -> np.ndarray:
+        """Return foreground voxels within a narrow band of the brain surface or sulcal CSF."""
+        if scan_index in self._surface_cache:
+            self._surface_cache.move_to_end(scan_index)
+            return self._surface_cache[scan_index]
+        inside_distance = distance_transform_edt(foreground)
+        candidates = np.argwhere(foreground & (inside_distance <= self.cortical_surface_band_voxels))
+        self._surface_cache[scan_index] = candidates
+        while len(self._surface_cache) > self.surface_cache_size:
+            self._surface_cache.popitem(last=False)
+        return candidates
 
     def _load(self, i: int) -> tuple[torch.Tensor, torch.Tensor | None]:
         if i in self._cache:
@@ -95,7 +125,7 @@ class HealthyT1Dataset(Dataset):
             except ValueError as exc:
                 if not any(message in str(exc) for message in retryable):
                     raise
-                # Some scans cannot supply a 64³ clean target patch. Substitute
+                # Some scans cannot supply a clean target patch at the configured size. Substitute
                 # another scan rather than letting an ineligible item stop a worker.
                 scan_index = random.randrange(len(self.paths))
         raise RuntimeError("Could not find a scan with a lesion-free target patch after 32 attempts")
@@ -108,25 +138,37 @@ class HealthyT1Dataset(Dataset):
         if any(dims[k] < self.patch_size[k] for k in range(3)):
             raise ValueError(f"Volume {self.paths[scan_index]} is smaller than patch {self.patch_size}")
         foreground = vol[0] > -0.95
+        foreground_np = foreground.cpu().numpy()
+        safe_foreground = foreground_np
         excluded_np = None
         if exclusion is not None:
             excluded_np = exclusion[0].cpu().numpy() > 0
-            # Conservative Euclidean margin guarantees sampled cubic patches miss lesion voxels.
+            # Reject target patches that touch the patient's actual lesion.
             radius = np.sqrt(sum((n // 2 + 2) ** 2 for n in self.patch_size))
             distances = distance_transform_edt(~excluded_np)
-            safe = foreground.cpu().numpy() & (distances > radius)
-            candidates = np.argwhere(safe)
-            if len(candidates) == 0:
-                raise ValueError(f"No lesion-free patch centers for {self.paths[scan_index]} at patch={self.patch_size}")
-        else:
-            candidates = torch.nonzero(foreground).cpu().numpy()
-        target = None; starts = None
+            safe_foreground = foreground_np & (distances > radius)
+        candidates = np.argwhere(safe_foreground)
+        if len(candidates) == 0:
+            raise ValueError(f"No lesion-free patch centers for {self.paths[scan_index]} at patch={self.patch_size}")
+        cortical_candidates = np.empty((0, 3), dtype=np.int64)
+        if self.cortical_patch_probability or self.cortical_placement_probability:
+            cortical_candidates = self._cortical_candidates(scan_index, foreground_np)
+        if exclusion is not None and len(cortical_candidates):
+            cortical_candidates = cortical_candidates[
+                safe_foreground[tuple(cortical_candidates.T)]
+            ]
+        target = None; starts = None; centered_on_cortex = False
         for _ in range(32):
-            if len(candidates) and random.random() < 0.9:
+            centered_on_cortex = bool(len(cortical_candidates) and
+                                      random.random() < self.cortical_patch_probability)
+            if centered_on_cortex:
+                center = cortical_candidates[random.randrange(len(cortical_candidates))].tolist()
+            elif len(candidates) and random.random() < 0.9:
                 center = candidates[random.randrange(len(candidates))].tolist()
             else:
                 center = [random.randrange(d), random.randrange(h), random.randrange(w)]
-            trial = [max(0, min(int(center[k]) - self.patch_size[k] // 2, dims[k] - self.patch_size[k])) for k in range(3)]
+            trial = [max(0, min(int(center[k]) - self.patch_size[k] // 2,
+                                dims[k] - self.patch_size[k])) for k in range(3)]
             if excluded_np is not None:
                 ex_slice = tuple(slice(trial[k], trial[k] + self.patch_size[k]) for k in range(3))
                 if excluded_np[ex_slice].any():
@@ -136,6 +178,17 @@ class HealthyT1Dataset(Dataset):
             break
         if target is None:
             raise ValueError(f"Could not sample a lesion-free patch from {self.paths[scan_index]}")
+        target_foreground = target[0] > -0.95
+        local_cortex = np.empty((0, 3), dtype=np.int64)
+        if len(cortical_candidates):
+            starts_np = np.asarray(starts)
+            patch_end = starts_np + np.asarray(self.patch_size)
+            inside = np.all((cortical_candidates >= starts_np) & (cortical_candidates < patch_end), axis=1)
+            local_cortex = cortical_candidates[inside] - starts_np
+        use_cortical_mask = bool(len(local_cortex) and
+                                 random.random() < self.cortical_placement_probability)
+        anchors = local_cortex if use_cortical_mask else None
+        min_overlap = self.cortical_min_foreground_overlap if use_cortical_mask else 0.80
         if self.mask_paths:
             donor = None
             for _ in range(min(32, len(self.mask_paths))):
@@ -147,17 +200,21 @@ class HealthyT1Dataset(Dataset):
                     if "Empty lesion mask" not in str(exc):
                         raise
                     self.mask_paths.remove(path)
-            foreground = target[0] > -0.95
-            mask = (place_donor_mask(donor, self.patch_size, foreground)
+            mask = (place_donor_mask(donor, self.patch_size, target_foreground,
+                                     anchor_candidates=anchors, min_foreground_overlap=min_overlap)
                     if donor is not None else torch.zeros((1, *self.patch_size), dtype=torch.float32))
             if mask.sum() < 20:
-                mask = make_lesion_mask(target[0].shape, foreground=foreground)
+                mask = make_lesion_mask(target[0].shape, foreground=target_foreground)
         else:
-            foreground = target[0] > -0.95
-            mask = make_lesion_mask(target[0].shape, foreground=foreground)
+            mask = make_lesion_mask(target[0].shape, foreground=target_foreground)
+        if self.max_mask_dilation_voxels:
+            iterations = random.randint(0, self.max_mask_dilation_voxels)
+            if iterations:
+                expanded = binary_dilation(mask[0].cpu().numpy() > 0, iterations=iterations)
+                mask = torch.from_numpy(expanded[None].astype(np.float32))
         mask_voxels = mask[0] > 0
-        overlap = float((mask_voxels & (target[0] > -0.95)).sum()) / max(int(mask_voxels.sum()), 1)
-        if mask_voxels.sum() < 20 or overlap < 0.8:
+        overlap = float((mask_voxels & target_foreground).sum()) / max(int(mask_voxels.sum()), 1)
+        if mask_voxels.sum() < 20 or overlap < min_overlap:
             raise ValueError(f"Could not place a lesion mask in target foreground (overlap={overlap:.3f})")
         mask_coords = torch.nonzero(mask_voxels)
         edge_margin = 4
@@ -187,7 +244,9 @@ class HealthyT1Dataset(Dataset):
         return cropped
 
 
-def place_donor_mask(donor: np.ndarray, shape, foreground: torch.Tensor) -> torch.Tensor:
+def place_donor_mask(donor: np.ndarray, shape, foreground: torch.Tensor,
+                     anchor_candidates: np.ndarray | None = None,
+                     min_foreground_overlap: float = 0.80) -> torch.Tensor:
     """Transform and place a donor lesion with tissue overlap and edge context."""
     mask_np = donor.astype(bool, copy=True)
     for axis in range(3):
@@ -205,9 +264,11 @@ def place_donor_mask(donor: np.ndarray, shape, foreground: torch.Tensor) -> torc
     if len(fg) == 0:
         return torch.zeros((1, *shape), dtype=torch.float32)
     foreground_np = foreground.cpu().numpy()
+    anchors = np.asarray(anchor_candidates) if anchor_candidates is not None else np.empty((0, 3), dtype=np.int64)
     best = None; best_score = -1.0
     for _ in range(64):
-        point = fg[random.randrange(len(fg))].tolist()
+        point = (anchors[random.randrange(len(anchors))].tolist() if len(anchors)
+                 else fg[random.randrange(len(fg))].tolist())
         starts = [max(edge_margin, min(int(point[k] - mask_np.shape[k] // 2),
                                        shape[k] - mask_np.shape[k] - edge_margin)) for k in range(3)]
         canvas = np.zeros(shape, dtype=bool)
@@ -216,9 +277,9 @@ def place_donor_mask(donor: np.ndarray, shape, foreground: torch.Tensor) -> torc
         score = float((canvas & foreground_np).sum()) / max(int(canvas.sum()), 1)
         if score > best_score:
             best, best_score = canvas, score
-        if score >= 0.90:
+        if score >= min(0.90, min_foreground_overlap + 0.10):
             break
-    if best is None or best_score < 0.80:
+    if best is None or best_score < min_foreground_overlap:
         return torch.zeros((1, *shape), dtype=torch.float32)
     return torch.from_numpy(best[None].astype(np.float32))
 
