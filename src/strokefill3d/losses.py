@@ -11,15 +11,15 @@ def training_loss(velocity, velocity_target, sample, target, mask, t, cfg):
     flow = masked_mean((velocity.float() - velocity_target).square(), mask)
     # Endpoint estimates at very noisy times can average plausible anatomy. Limit
     # auxiliary reconstruction pressure to late interpolation times.
-    tv = t.view(-1, 1, 1, 1, 1)
+    tv = t.view(-1, *([1] * (target.ndim - 1)))
     endpoint = torch.where(
         mask > 0, sample.float() + (1 - tv) * velocity.float(), target
     )
     support = mask * (tv >= cfg.get("structural_min_time", 0.5))
     image = masked_mean((endpoint - target).abs(), support)
     gradients = []
-    for axis in (2, 3, 4):
-        a = [slice(None)] * 5
+    for axis in range(2, target.ndim):
+        a = [slice(None)] * target.ndim
         b = a.copy()
         a[axis] = slice(1, None)
         b[axis] = slice(None, -1)

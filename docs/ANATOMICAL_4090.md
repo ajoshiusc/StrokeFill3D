@@ -8,7 +8,7 @@ From your existing checkout and environment:
 
 ```bash
 cd /home/ajoshi/Projects/StrokeFill3D
-git pull --ff-only
+git pull
 source .venv/bin/activate
 # Reuse the working PyTorch/MONAI environment from the previous run.
 
@@ -51,10 +51,10 @@ Eight fixed synthetic examples span large cortical, large deep, partial large co
 `best.pt` minimizes:
 
 ```
-masked_MAE + 0.25 * (1 - bounding_box_SSIM) + 0.25 * gradient_MAE
+masked_MAE + 0.25 * (1 - masked_SSIM) + 0.25 * gradient_MAE
 ```
 
-MAE and gradient error are masked. SSIM is measured on the mask bounding box plus three voxels of context, so it is not a fully masked SSIM. Metrics use normalized [-1,1] intensity, not scanner units. PSNR and a high-pass error in eroded bright-tissue regions are also recorded; the latter is explicitly a white-matter PROXY, not a WM segmentation metric. Those proxy regions are determined from the known target only for scoring, never model conditioning. Eight validation examples are a practical initial panel, not a comprehensive benchmark; increase `validation_cases` in a fresh run for broader evaluation.
+MAE and gradient error are masked. The primary SSIM is averaged at missing-voxel centers with a 7-voxel window and reflected padding at patch faces. Observed neighbors still contribute to each local SSIM window. Bounding-box SSIM remains diagnostic only and no longer selects best.pt; copied context could otherwise inflate the score. Metrics use normalized [-1,1] intensity, not scanner units. PSNR and a high-pass error in eroded bright-tissue regions are also recorded; the latter is explicitly a white-matter PROXY, not a WM segmentation metric. Those proxy regions are determined from the known target only for scoring, never model conditioning. Eight validation examples are a practical initial panel, not a comprehensive benchmark; increase `validation_cases` in a fresh run for broader evaluation.
 
 Files:
 
@@ -89,3 +89,12 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 The regression checks cover hidden-target and real-lesion leakage through conditioning, mirror geometry, crop equivalence, Gaussian integration, observed-voxel preservation, split/donor isolation, anatomical backward propagation and reconstruction metrics. The real-data preflight additionally checks the actual 96³ model update and a short validation sample. It is not evidence of trained reconstruction quality.
+
+
+## Selected approach after the small 2D comparisons
+
+Use the single-stage conditional rectified-flow profile in this document at 96³. Its final output is obtained by velocity-field integration from Gaussian noise; seven observable anatomical channels condition that field. The coarse observed-context channel is computed preprocessing, not a separately trained image decoder. No grafting, discriminator, auxiliary image generator or classifier-free guidance is part of the selected workflow.
+
+The quick 2D studies did not establish reliable fine cortical-fold reconstruction. A learned coarse-conditioner plus residual RF produced a mixed result: versus the original RF, fresh-test MAE was 0.290 vs 0.284, SSIM 0.299 vs 0.282, and gradient-magnitude error 0.130 vs 0.117. These do not establish a consistent quality benefit sufficient to justify the extra stage. Pure image regression remained blurry, adversarial refinements gave limited edge gains, and non-RF grafting was excluded at the user's request. Those prototypes were archived outside the production repository.
+
+The chosen 96³ architecture has 41.3M parameters and four scales, versus 7.2M/three scales in the earlier completed cortical run. Its 3D training quality is not proven by the short 2D tests. The purpose of the new run is to learn a stronger anatomical prior using the larger model and complete training population, while judging progress with fixed reconstructions. Inspect validation screenshots after the first 2,000 updates and throughout training. Sharpness or a lower training loss alone does not establish restored anatomy. The diagnostic one-pixel-tolerance edge F1 from the small tests can reward noise and is not used for checkpoint selection.

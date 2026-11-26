@@ -1,3 +1,4 @@
+# Selected: one conditional RF model at 96^3; no decoder, GAN or grafting stage.
 # New architecture: start a NEW run, do not --resume the old cortical model.
 patch_size: [96, 96, 96]
 spacing_mm: [1.0, 1.0, 1.0]

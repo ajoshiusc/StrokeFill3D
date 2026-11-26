@@ -133,6 +133,50 @@ class PipelineTests(unittest.TestCase):
         self.assertGreater(noisy["masked_mae"], 0)
         self.assertLess(noisy["bbox_ssim"], exact["bbox_ssim"])
 
+    def test_masked_ssim_scores_missing_region_and_handles_face_masks(self):
+        from monai.metrics.regression import compute_ssim_and_cs
+
+        for dims in (2, 3):
+            torch.manual_seed(25)
+            target = torch.rand(1, 1, *([24] * dims)) * 2 - 1
+            mask = torch.zeros_like(target)
+            mask[(slice(None), slice(None), *[slice(8, 10)] * dims)] = 1
+            mask[(slice(None), slice(None), *[slice(14, 16)] * dims)] = 1
+            pred = target * (1 - mask)
+            result = reconstruction_metrics(pred, target, mask)
+            padding = [3, 3] * dims
+            similarity, _ = compute_ssim_and_cs(
+                torch.nn.functional.pad(pred, padding, mode="reflect"),
+                torch.nn.functional.pad(target, padding, mode="reflect"),
+                dims,
+                (7,) * dims,
+                (1.5,) * dims,
+                data_range=2.0,
+            )
+            expected = float((similarity * mask).sum() / mask.sum())
+            self.assertAlmostEqual(result["masked_ssim"], expected, places=6)
+            self.assertLess(result["masked_ssim"], result["bbox_ssim"])
+            face_mask = torch.zeros_like(target)
+            face_mask[(slice(None), slice(None), *[slice(0, 1)] * dims)] = 1
+            face_result = reconstruction_metrics(target, target, face_mask)
+            self.assertAlmostEqual(face_result["masked_ssim"], 1.0, places=5)
+
+    def test_resume_does_not_compare_incompatible_validation_scores(self):
+        from strokefill3d.train import compatible_best_score
+
+        self.assertEqual(
+            compatible_best_score({"best_score": 0.1, "metrics": {"bbox_ssim": 0.9}}),
+            float("inf"),
+        )
+        self.assertEqual(
+            compatible_best_score({"best_score": 0.4, "metrics": {"masked_ssim": 0.5}}),
+            0.4,
+        )
+        self.assertEqual(
+            compatible_best_score({"best_score": 0.4, "validation_metric_version": 2}),
+            0.4,
+        )
+
     def test_site_and_donor_leakage_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

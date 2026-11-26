@@ -41,6 +41,14 @@ def atomic_save(state, path):
     tmp.replace(path)
 
 
+def compatible_best_score(state):
+    """Do not compare the previous bbox-based score with masked-SSIM scores."""
+    metrics = state.get("metrics") or {}
+    if state.get("validation_metric_version") == 2 or "masked_ssim" in metrics:
+        return state.get("best_score", float("inf"))
+    return float("inf")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", default="configs/train.yaml")
@@ -179,7 +187,8 @@ def main():
             ema.load_state_dict(state.get("ema_model") or state["model"])
         step = int(state["step"])
         start_epoch = int(state["epoch"]) - (not state.get("epoch_completed", False))
-        best = state.get("best_score", best)
+        best = compatible_best_score(state)
+        last_metrics = state.get("metrics") if best != float("inf") else None
         if step >= max_steps:
             raise ValueError(
                 "Checkpoint already reached max_steps; increase it to extend the run"
@@ -200,6 +209,7 @@ def main():
             "epoch": epoch,
             "epoch_completed": epoch_completed,
             "best_score": best,
+            "validation_metric_version": 2,
             "metrics": last_metrics,
             "model_config": mc,
             "training_config": cfg,

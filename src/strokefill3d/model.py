@@ -40,12 +40,13 @@ class RectifiedFlowUNet(torch.nn.Module):
         anatomy_channels=0,
         use_flash_attention=False,
         activation_checkpointing=False,
+        spatial_dims=3,
     ):
         super().__init__()
         self.anatomy_channels = int(anatomy_channels)
         self.activation_checkpointing = activation_checkpointing
         self.backbone = DiffusionModelUNet(
-            spatial_dims=3,
+            spatial_dims=spatial_dims,
             in_channels=3 + self.anatomy_channels,
             out_channels=1,
             num_res_blocks=num_res_blocks,
@@ -82,5 +83,6 @@ def model_config(cfg):
         "anatomy_channels",
         "use_flash_attention",
         "activation_checkpointing",
+        "spatial_dims",
     )
     return {k: cfg[k] for k in keys if k in cfg}

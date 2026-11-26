@@ -8,6 +8,8 @@ MONAI research project for **mask-conditioned 3D T1-weighted stroke-lesion inpai
 
 Use [the anatomical 4090 workflow](docs/ANATOMICAL_4090.md) for the new 96³ model with observable anatomical cues, EMA, partial-mask supervision and fixed held-out reconstruction validation. Start a **new run** with `configs/atlas3_anatomical_4090.yaml`; old cortical checkpoints have a different architecture. The earlier profiles below are retained for legacy runs.
 
+The selected 4090 workflow uses one RF model at 96³. Small 2D experiments did not justify adding a learned coarse decoder, adversarial refiner, or grafting stage. Checkpoint selection now uses SSIM at masked voxel centers rather than a bounding-box average dominated by copied context. Fine cortical recovery remains a validation goal, not an established result.
+
 ## Why rectified flow
 
 The model learns a velocity field along a straight interpolation from Gaussian noise to a healthy T1 target. Training samples a random point on that path and regresses the target velocity. At inference, random noise is placed inside the lesion mask, the observed T1 is clamped outside the mask, and the learned field is integrated over multiple steps. Different noise seeds can produce different plausible fills. This is flow matching / rectified flow, distinct from FastSurfer-LIT's DDPM reverse-noising procedure. MONAI provides an `RFlowScheduler`; this project uses the same straight-path velocity objective with an explicit masked-context update loop. [MONAI RFlowScheduler documentation](https://monai.readthedocs.io/en/1.5.2/networks.html#rflowscheduler) [Original rectified-flow paper](https://arxiv.org/abs/2209.03003)

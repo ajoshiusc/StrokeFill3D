@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from monai.metrics import SSIMMetric
+from monai.metrics.regression import compute_ssim_and_cs
 
 from .anatomy_data import AnatomicalT1Dataset
 from .data import HealthyT1Dataset
@@ -168,7 +169,8 @@ def reconstruction_metrics(pred, target, mask):
     mask = mask.float()
     error = (pred - target).abs()
     mse = masked_mean(error.square(), mask)
-    metric = SSIMMetric(spatial_dims=3, data_range=2.0, reduction="none", win_size=7)
+    dims = target.ndim - 2
+    metric = SSIMMetric(spatial_dims=dims, data_range=2.0, reduction="none", win_size=7)
     # Restrict evaluation to the mask bounding box; SSIM includes its immediate context.
     loc = torch.nonzero(mask[0, 0] > 0)
     lo = loc.min(0).values
@@ -176,11 +178,24 @@ def reconstruction_metrics(pred, target, mask):
     # Pad very thin boxes so the 7-voxel SSIM window remains defined.
     lo = (lo - 3).clamp_min(0)
     hi = torch.minimum(hi + 3, torch.as_tensor(mask.shape[2:], device=hi.device))
+    # Keep even thin face-touching masks valid for the diagnostic bbox SSIM.
+    for axis, length in enumerate(target.shape[2:]):
+        if int(hi[axis] - lo[axis]) < 7:
+            lo[axis] = max(0, min(int(lo[axis]), length - 7))
+            hi[axis] = lo[axis] + 7
     sl = (slice(None), slice(None), *[slice(int(a), int(b)) for a, b in zip(lo, hi)])
     ssim = float(metric(pred[sl], target[sl]).mean())
+    # Score SSIM at missing-voxel centers, including patch-face masks. A bbox
+    # average can be dominated by the perfectly copied observed context.
+    padded_pred = F.pad(pred, [3, 3] * dims, mode="reflect")
+    padded_target = F.pad(target, [3, 3] * dims, mode="reflect")
+    ssim_map, _ = compute_ssim_and_cs(
+        padded_pred, padded_target, dims, (7,) * dims, (1.5,) * dims, data_range=2.0
+    )
+    masked_ssim = float(masked_mean(ssim_map, mask))
     gradients = []
-    for axis in (2, 3, 4):
-        a = [slice(None)] * 5
+    for axis in range(2, target.ndim):
+        a = [slice(None)] * target.ndim
         b = a.copy()
         a[axis] = slice(1, None)
         b[axis] = slice(None, -1)
@@ -195,14 +210,17 @@ def reconstruction_metrics(pred, target, mask):
     fg = target > -0.95
     threshold = torch.quantile(target[fg], 0.65) if fg.any() else target.new_tensor(1.0)
     wm = (target > threshold).float()
-    wm = (1 - F.max_pool3d(1 - wm, 3, 1, 1)) * mask
-    high_p = pred - F.avg_pool3d(pred, 3, 1, 1)
-    high_t = target - F.avg_pool3d(target, 3, 1, 1)
+    max_pool = F.max_pool2d if dims == 2 else F.max_pool3d
+    avg_pool = F.avg_pool2d if dims == 2 else F.avg_pool3d
+    wm = (1 - max_pool(1 - wm, 3, 1, 1)) * mask
+    high_p = pred - avg_pool(pred, 3, 1, 1)
+    high_t = target - avg_pool(target, 3, 1, 1)
     wm_error = float(masked_mean((high_p - high_t).abs(), wm)) if wm.sum() else None
     return {
         "masked_mae": float(masked_mean(error, mask)),
         "masked_psnr": float(10 * torch.log10(4 / mse.clamp_min(1e-12))),
         "bbox_ssim": ssim,
+        "masked_ssim": masked_ssim,
         "gradient_mae": float(gradient),
         "wm_proxy_highpass_mae": wm_error,
         "wm_proxy_voxels": int(wm.sum()),
@@ -259,7 +277,7 @@ def evaluate(model, cases, cfg, device, out, step):
                 )
                 records.append(row)
                 print(
-                    f"validation step={step} case={index + 1}/{len(cases)} seed={seed_index} mae={row['masked_mae']:.5f} ssim={row['bbox_ssim']:.5f}",
+                    f"validation step={step} case={index + 1}/{len(cases)} seed={seed_index} mae={row['masked_mae']:.5f} masked_ssim={row['masked_ssim']:.5f}",
                     flush=True,
                 )
                 if seed_index == 0:
@@ -275,6 +293,7 @@ def evaluate(model, cases, cfg, device, out, step):
                 "masked_mae",
                 "masked_psnr",
                 "bbox_ssim",
+                "masked_ssim",
                 "gradient_mae",
                 "outside_max_error",
             ]
@@ -282,7 +301,7 @@ def evaluate(model, cases, cfg, device, out, step):
         # Explicit combined score: lower MAE/gradient error and higher structural similarity.
         metrics["selection_score"] = (
             metrics["masked_mae"]
-            + 0.25 * (1 - metrics["bbox_ssim"])
+            + 0.25 * (1 - metrics["masked_ssim"])
             + 0.25 * metrics["gradient_mae"]
         )
         metrics["step"] = step

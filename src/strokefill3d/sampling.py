@@ -33,7 +33,9 @@ def window_plan(mask, roi, strategy="auto", overlap=0.5, margin=8):
     windows = dense_patch_slices(
         tuple(shape),
         tuple(roi),
-        _get_scan_interval(tuple(shape), tuple(roi), 3, (overlap,) * 3),
+        _get_scan_interval(
+            tuple(shape), tuple(roi), len(shape), (overlap,) * len(shape)
+        ),
     )
     return [s for s in windows if mask[s].any()], "gaussian"
 
