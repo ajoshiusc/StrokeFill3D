@@ -1,0 +1,23 @@
+# Cortical recovery fine-tune profile for the 6 GiB RTX 2060.
+# Keep the known-fit 64^3 patch and batch size 1.
+patch_size: [64, 64, 64]
+spacing_mm: [1.0, 1.0, 1.0]
+samples_per_scan: 1
+batch_size: 1
+num_workers: 2
+epochs: 30
+channels: [32, 64, 128]
+attention_levels: [false, false, true]
+num_head_channels: [0, 0, 32]
+num_res_blocks: 1
+time_embedding_scale: 1000.0
+amp: true
+learning_rate: 0.0001
+weight_decay: 0.00001
+grad_clip: 1.0
+checkpoint_every_steps: 250
+cortical_patch_probability: 0.60
+cortical_surface_band_voxels: 6
+cortical_placement_probability: 0.60
+cortical_min_foreground_overlap: 0.55
+max_mask_dilation_voxels: 2

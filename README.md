@@ -4,6 +4,10 @@ MONAI research project for **mask-conditioned 3D T1-weighted stroke-lesion inpai
 
 > Research software only. It is not validated for clinical decisions, diagnosis, treatment, or patient care. Outputs are model-generated estimates, not recovered ground truth.
 
+## Anatomical training on RTX 4090 (current)
+
+Use [the anatomical 4090 workflow](docs/ANATOMICAL_4090.md) for the new 96³ model with observable anatomical cues, EMA, partial-mask supervision and fixed held-out reconstruction validation. Start a **new run** with `configs/atlas3_anatomical_4090.yaml`; old cortical checkpoints have a different architecture. The earlier profiles below are retained for legacy runs.
+
 ## Why rectified flow
 
 The model learns a velocity field along a straight interpolation from Gaussian noise to a healthy T1 target. Training samples a random point on that path and regresses the target velocity. At inference, random noise is placed inside the lesion mask, the observed T1 is clamped outside the mask, and the learned field is integrated over multiple steps. Different noise seeds can produce different plausible fills. This is flow matching / rectified flow, distinct from FastSurfer-LIT's DDPM reverse-noising procedure. MONAI provides an `RFlowScheduler`; this project uses the same straight-path velocity objective with an explicit masked-context update loop. [MONAI RFlowScheduler documentation](https://monai.readthedocs.io/en/1.5.2/networks.html#rflowscheduler) [Original rectified-flow paper](https://arxiv.org/abs/2209.03003)
@@ -26,7 +30,7 @@ Build site-held-out ATLAS3 manifests and a training-only donor-mask list:
 python scripts/build_atlas3_training_manifests.py
 ```
 
-This writes `atlas3_train.csv`, `atlas3_holdout.csv`, and `atlas3_masks_train.csv` under `/deneb_disk/data/stroke_inpainting/manifests/`. The trainer accepts the training manifest as `--manifest` and the donor mask file as `--mask-manifest`. The holdout is reserved for a later evaluation step; the current trainer does not yet run validation.
+This writes `atlas3_train.csv`, `atlas3_holdout.csv`, and `atlas3_masks_train.csv` under `/deneb_disk/data/stroke_inpainting/manifests/`. The trainer accepts the training manifest as `--manifest` and the donor mask file as `--mask-manifest`. The new anatomical workflow partitions holdout sites into validation and reserved test sets and evaluates fixed reconstructions.
 
 ## Install
 
@@ -116,9 +120,27 @@ strokefill-infer \
 
 Inference now zeros the context channel under the mask, as training does, and defaults its window size from the checkpoint's recorded training patch size. The output path above is an evaluation artifact; it does not share the training run directory.
 
+## Cortical recovery fine-tune (RTX 2060)
+
+For a local RTX 2060, use `configs/atlas3_cortical_2060.yaml`. It keeps the known-fit 64³ patch and batch size 1 while enabling cortical patch/mask sampling and 0–2 voxel mask dilation. It resumes the local 2060 checkpoint into a separate run directory:
+
+```bash
+cd /home/ajoshi/Projects/StrokeFill3D
+source .venv/bin/activate
+mkdir -p /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_2060_20261124/logs
+set -o pipefail
+PYTHONUNBUFFERED=1 PYTHONPATH=src python -m strokefill3d.train \
+  --config configs/atlas3_cortical_2060.yaml \
+  --manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_train.csv \
+  --mask-manifest /deneb_disk/data/stroke_inpainting/manifests/atlas3_masks_train.csv \
+  --output /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_2060_20261124 \
+  --resume /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_2060_manual/last.pt \
+  2>&1 | tee /deneb_disk/data/stroke_inpainting/runs/atlas3_rf_cortical_2060_20261124/logs/train.log
+```
+
 ## Inference
 
-Image and mask must share the same source voxel grid. The CLI verifies their alignment, then reorients both to RAS and resamples to 1 mm. The output is in that grid. Pixels outside the inpainting mask retain the input values. By default, inference uses 48 flow steps and the patch size recorded in the checkpoint; `--roi-size` and `--steps` can override them. `--mask-dilation-voxels N` expands the supplied mask by N voxels. Omit `--seed` for a fresh stochastic completion; pass a fixed seed to reproduce one sample.
+Image and mask must share the same source voxel grid. The CLI verifies their alignment, then reorients both to RAS and resamples to 1 mm. The output is in that grid. Pixels outside the inpainting mask retain the input values. By default, inference uses 48 flow steps and the patch size recorded in the checkpoint; `--roi-size` and `--steps` can override them. `--mask-dilation-voxels N` expands the supplied mask by N voxels. The default seed is 2026; pass a different `--seed` to explore another stochastic completion.
 
 ```bash
 strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
@@ -128,7 +150,7 @@ strokefill-infer --image case_T1w.nii.gz --mask case_lesion.nii.gz \
 
 ## Limitations and validation checklist
 
-- ATLAS3 mask-bank sampling preserves real lesion morphology, but randomly places each donor shape rather than anatomically registering it to the target scan. The held-out site manifest is written, but validation is not yet implemented in the trainer.
+- ATLAS3 mask-bank sampling preserves real lesion morphology, but randomly places each donor shape rather than anatomically registering it to the target scan. The legacy training commands do not enable validation; the anatomical workflow requires it.
 - A realistic-looking sample can still be anatomically wrong. Report masked MAE/SSIM, boundary error, and outside-mask identity error; assess multiple generated samples and site-held-out cases.
 - T1 intensities are percentile-normalized and not calibrated across scanners.
 - The model is trained from scratch; dataset size and diversity matter. Do not infer clinical performance from synthetic validation.
