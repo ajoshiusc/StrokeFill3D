@@ -10,7 +10,7 @@ From your existing checkout and environment:
 cd /home/ajoshi/Projects/StrokeFill3D
 git pull --ff-only
 source .venv/bin/activate
-python -m pip install -e .
+# Reuse the working PyTorch/MONAI environment from the previous run.
 
 # One real training update and a short generated validation reconstruction.
 # This reports actual peak VRAM on YOUR 4090 and writes no training checkpoint.
@@ -24,7 +24,7 @@ set -o pipefail
 bash scripts/train_anatomical_4090.sh "$RUN" 2>&1 | tee "$RUN/logs/train.log"
 ```
 
-Use tmux/screen for a long training session. Stop an existing trainer separately if it occupies the 4090. This script does not terminate other processes. `STROKEFILL_DATA_ROOT` can change the shared data root; existing CSV image paths must still resolve. Read the generated train log for sampling or CUDA failures before leaving the job unattended.
+No new runtime dependency is required for this upgrade; the launcher imports the pulled source directly. For a fresh environment, use Python 3.10/3.11 and the installation instructions in README.md. Use tmux/screen for a long training session. Stop an existing trainer separately if it occupies the 4090. This script does not terminate other processes. `STROKEFILL_DATA_ROOT` can change the shared data root; existing CSV image paths must still resolve. Read the generated train log for sampling or CUDA failures before leaving the job unattended.
 
 To resume this new run after interruption, set RUN to its existing directory:
 
