@@ -1,6 +1,10 @@
 # Anatomical rectified flow on RTX 4090
 
+**Archived architecture:** the commands below train the earlier mask-conditioned RF, which did not meet the cortical quality target. Use [the new 96³ normal-prior RF workflow](NORMAL_PRIOR_4090.md) for the selected approach. Its execution is locally tested; trained 3D quality still requires validation.
+
 This is a new model and a new training run. It is intended to address the mottled white matter and weak cortical structure seen in the earlier three-level model. Better output quality remains to be established by validation and inspection. Do not resume an old 3-channel/three-level checkpoint into this model.
+
+The [normal-code RF 2D follow-up](NORMAL_CODE_RF_2D_20261126.md) shows improved decoded structure, with remaining failures. Its source code is under `experiments/normal_code_rf_2d/`. The commands below remain the **older 3D architecture**; they will not train the new normal-code prior. Do not substitute its 2D checkpoint into this workflow.
 
 ## Start on the remote machine
 

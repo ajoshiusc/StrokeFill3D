@@ -1,0 +1,68 @@
+seed: 2026
+cpu_threads: 4
+patch_size: [96, 96, 96]
+calibration_samples: 32
+pca_relative_floor: 0.0001
+data:
+  workers: 4
+  volume_cache: 2
+  exclusion_margin: 3
+autoencoder:
+  steps: 20000
+  lr: 0.0003
+  latent_noise: 0.1
+  validate_every: 1000
+  save_every: 250
+  model:
+    spatial_dims: 3
+    in_channels: 1
+    out_channels: 1
+    channels: [16, 32]
+    num_res_blocks: 2
+    attention_levels: [false, false]
+    latent_channels: 8
+    norm_num_groups: 8
+    with_encoder_nonlocal_attn: false
+    with_decoder_nonlocal_attn: false
+    use_checkpoint: true
+codec_gate:
+  min_masked_ssim: 0.93
+  min_foreground_ssim: 0.93
+  min_case_ssim: 0.85
+cache:
+  samples: 8192
+  shard_size: 16
+  workers: 2
+prior:
+  steps: 120000
+  lr: 0.0002
+  batch_size: 2
+  accumulation: 2
+  save_every: 250
+  validate_every: 2000
+  model:
+    spatial_dims: 3
+    channels: [32, 64, 96, 128]
+    num_res_blocks: 2
+    attention_levels: [false, false, true, true]
+    num_head_channels: [0, 0, 32, 32]
+    norm_num_groups: 8
+    norm_eps: 0.000001
+    use_flash_attention: true
+    activation_checkpointing: true
+validation:
+  count: 4
+  quick:
+    cases: 4
+    seeds: [909]
+    flow_steps: 8
+    iterations: 40
+    trust_weight: 0.001
+    boundary_weight: 4.0
+  full:
+    cases: 4
+    seeds: [909, 910]
+    flow_steps: 16
+    iterations: 120
+    trust_weight: 0.001
+    boundary_weight: 4.0
