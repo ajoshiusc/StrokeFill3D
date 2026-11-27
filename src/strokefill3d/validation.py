@@ -162,6 +162,62 @@ def masked_mean(value, mask):
     return (value * mask).sum() / mask.sum().clamp_min(1)
 
 
+def interior_detail_metrics(pred, target, mask, ssim_map=None):
+    """Score missing tissue away from copied context, in normalized [-1, 1] units.
+
+    Gradient energy alone rewards noise. Report its ratio alongside alignment
+    with the target gradients and error; none is a standalone realism score.
+    A three-voxel erosion keeps each 7-voxel SSIM window inside the hole.
+    Undefined scores (thin masks or constant targets) are explicitly null.
+    """
+    pred, target, mask = pred.float(), target.float(), mask.float()
+    dims = target.ndim - 2
+    if dims not in (2, 3) or pred.shape != target.shape or mask.shape != target.shape:
+        raise ValueError("Expected aligned 2D or 3D prediction, target and mask")
+    pool = F.max_pool2d if dims == 2 else F.max_pool3d
+    interior = 1 - pool(F.pad(1 - mask, [3, 3] * dims, value=1), 7, 1)
+    count = int(interior.sum())
+    result = {
+        "interior_voxels": count,
+        "interior_ssim": None,
+        "interior_gradient_cosine": None,
+        "interior_gradient_ratio": None,
+        "interior_gradient_mae": None,
+    }
+    if not count:
+        return result
+    if ssim_map is None:
+        ssim_map, _ = compute_ssim_and_cs(
+            F.pad(pred, [3, 3] * dims, mode="reflect"),
+            F.pad(target, [3, 3] * dims, mode="reflect"),
+            dims,
+            (7,) * dims,
+            (1.5,) * dims,
+            data_range=2.0,
+        )
+    result["interior_ssim"] = float(masked_mean(ssim_map, interior))
+    dot = pred_energy = target_energy = pred_abs = target_abs = error = pairs = 0
+    for axis in range(2, target.ndim):
+        n = target.shape[axis] - 1
+        valid = interior.narrow(axis, 0, n) * interior.narrow(axis, 1, n)
+        gp, gt = pred.diff(dim=axis), target.diff(dim=axis)
+        dot = dot + (gp * gt * valid).sum()
+        pred_energy = pred_energy + (gp.square() * valid).sum()
+        target_energy = target_energy + (gt.square() * valid).sum()
+        pred_abs = pred_abs + (gp.abs() * valid).sum()
+        target_abs = target_abs + (gt.abs() * valid).sum()
+        error = error + ((gp - gt).abs() * valid).sum()
+        pairs = pairs + valid.sum()
+    if pairs > 0:
+        result["interior_gradient_mae"] = float(error / pairs)
+    if target_abs > 1e-8:
+        result["interior_gradient_ratio"] = float(pred_abs / target_abs)
+        result["interior_gradient_cosine"] = float(
+            dot / (pred_energy * target_energy).sqrt().clamp_min(1e-8)
+        )
+    return result
+
+
 def reconstruction_metrics(pred, target, mask):
     """Metrics on known targets. WM proxy uses target intensity, not a tissue label."""
     pred = pred.float()
@@ -227,6 +283,7 @@ def reconstruction_metrics(pred, target, mask):
         "outside_max_error": float(error[mask == 0].max())
         if (mask == 0).any()
         else 0.0,
+        **interior_detail_metrics(pred, target, mask, ssim_map),
     }
 
 

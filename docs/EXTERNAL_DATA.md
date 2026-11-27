@@ -46,7 +46,7 @@ The input is skull stripped and intensity-scaled with the model's original obser
 
 Outputs remain on the training template grid in N4-corrected source intensity units. The `.mask.nii.gz` file contains the effective dilated mask restricted to the extracted brain. Outside this mask, output voxels equal the prepared T1 exactly. This preservation does not apply to the original native scan, which has undergone bias correction, registration, and skull stripping.
 
-Tile results are cached beside the output under `.tiles/`. Repeating the identical inference command resumes completed tiles. Input, checkpoint, and codec fingerprints prevent reuse with changed data or settings; use a new output path for comparisons.
+Tile results are cached beside the output under `.tiles/`. Repeating the identical inference command resumes completed tiles. Input, checkpoint, codec, and inference-code fingerprints prevent reuse with changed data, settings, or implementation. Use a new output path after code updates and for comparisons.
 
 Returning a result to native space requires the inverse affine; the optional SyN workflow also requires its saved inverse warp; masks need nearest-neighbor interpolation. The lesion mask should remain available for downstream analyses.
 

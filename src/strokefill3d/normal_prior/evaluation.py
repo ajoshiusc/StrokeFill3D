@@ -154,5 +154,17 @@ def evaluate_prior(model, codec, cases, device, out, settings, step):
         "gradient_mae": float(np.mean([r["gradient_mae"] for r in rows])),
         "cases": rows,
     }
+    for key in (
+        "interior_ssim",
+        "interior_gradient_cosine",
+        "interior_gradient_ratio",
+        "interior_gradient_mae",
+    ):
+        values = [row[key] for row in rows if row.get(key) is not None]
+        result[key] = float(np.mean(values)) if values else None
+    result["interior_scored_cases"] = sum(row["interior_voxels"] > 0 for row in rows)
+    result["quality_status"] = (
+        "research result; inspect missing-tissue metrics and previews"
+    )
     atomic_json(result, out / "metrics.json")
     return result

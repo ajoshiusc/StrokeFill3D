@@ -18,6 +18,14 @@ from .data import check_grid, normalize
 from .io import RunLock, atomic_json
 
 
+def implementation_identity():
+    """Invalidate generated tiles when planning, normalization or RF code changes."""
+    return {
+        name: file_hash(Path(__file__).with_name(name))
+        for name in ("external_infer.py", "data.py", "core.py")
+    }
+
+
 def plan_tiles(mask, size=96, margin=12):
     """Greedily cover masked voxels using interior ownership cores.
 
@@ -150,6 +158,7 @@ def main():
     if tuple(codec.patch_size) != (96, 96, 96):
         raise ValueError("External inference requires a trained 96-cube codec")
     identity = {
+        "implementation_sha256": implementation_identity(),
         "inputs": {str(v): file_hash(v) for v in [image_path, lesion_path, brain_path]},
         "codec_sha256": saved["codec_sha256"],
         "checkpoint_sha256": file_hash(
