@@ -1,6 +1,6 @@
-# Normal-prior rectified flow: 3D, 96³, RTX 4090
+# Train the 3D model with an NVIDIA RTX 4090 GPU
 
-This is the 3D port of the selected normal-code RF experiment. It trains a **new 3D autoencoder and a new 3D rectified-flow prior from scratch**. The old 2D codec and the earlier mask-conditioned 3D RF checkpoints are incompatible. The local tests establish that the implementation works; anatomical quality still requires trained 3D validation.
+An RTX 4090 is a high-memory NVIDIA graphics card (GPU) used here to train the 3D model. This guide starts a **new 3D autoencoder and 3D rectified-flow model from scratch**. The model processes 96×96×96 MRI patches. A short preflight checks that the software and GPU run correctly; it does not train a useful model. The full training job takes much longer and saves checkpoints as it runs. The old 2D and earlier mask-conditioned checkpoints cannot be reused.
 
 ## Method and defaults
 
@@ -10,7 +10,7 @@ This is the 3D port of the selected normal-code RF experiment. It trains a **new
 - Inpainting freezes both networks and fits only the initial Gaussian source through the RF and decoder. The loss sees visible MRI and gradients between known voxel pairs, emphasizes a four-voxel observed rim, and includes a small source-trust penalty. This is [D-Flow-style source optimization](https://proceedings.mlr.press/v235/ben-hamu24a.html), not exact posterior sampling. The final output copies observed voxels exactly.
 - Default budgets: AE 20,000 updates; RF 120,000 updates, batch 2 with accumulation 2 (effective batch 4). RF source fitting uses 16 Euler steps and 120 Adam iterations. These are starting budgets, not a promise of convergence or improved anatomy.
 
-## Pull, test and train
+## Set up, check the GPU, and start training
 
 Use your existing remote checkout and CUDA environment. Do not start this alongside another GPU trainer.
 

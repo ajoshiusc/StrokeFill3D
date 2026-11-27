@@ -2,7 +2,7 @@
 
 StrokeFill3D is research software for 3D T1 MRI stroke-lesion inpainting using a **normal-code rectified-flow prior**. The selected workflow trains a new 3D autoencoder and a complete normal-code RF prior, then fits the initial RF noise to the observed MRI during inpainting.
 
-The RTX 4090 profile uses **96×96×96 MRI patches** and **48×48×48 latent codes**, with position conditioning and generated validation. It ports the [improved small 2D experiment](docs/NORMAL_CODE_RF_2D_20261126.md). Local execution is tested; trained 3D anatomical quality remains to be evaluated. Generated anatomy is an estimate, not recovered patient ground truth.
+The training guide is written for a computer with an **NVIDIA GeForce RTX 4090 graphics card (GPU)**. It trains on **96×96×96 MRI patches**, compresses them to **48×48×48 latent codes**, and checks generated inpainting during training. This is the larger GPU used for the full training run; smaller GPUs can run the preflight but may not have enough memory or speed for full training. Generated anatomy is an estimate, not recovered patient ground truth.
 
 ## Install
 
@@ -15,7 +15,7 @@ python -m pip install -e .
 
 The working local environment uses PyTorch 2.6.0, MONAI 1.5.2 and CUDA 12.4. Reuse the existing remote environment and run `python -m pip install -e .` after pulling to install the declared Pillow dependency.
 
-## Train on the RTX 4090
+## Train on an NVIDIA RTX 4090 GPU
 
 Full commands, stage details, resume instructions and inference are in [the normal-prior 4090 guide](docs/NORMAL_PRIOR_4090.md).
 
