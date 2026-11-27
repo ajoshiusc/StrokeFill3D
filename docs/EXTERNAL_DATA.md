@@ -48,6 +48,8 @@ Outputs remain on the training template grid in N4-corrected source intensity un
 
 Tile results are cached beside the output under `.tiles/`. Repeating the identical inference command resumes completed tiles. Input, checkpoint, codec, and inference-code fingerprints prevent reuse with changed data, settings, or implementation. Use a new output path after code updates and for comparisons.
 
+Result metadata identifies the exact checkpoint used, including when training publishes a newer checkpoint during inference.
+
 Returning a result to native space requires the inverse affine; the optional SyN workflow also requires its saved inverse warp; masks need nearest-neighbor interpolation. The lesion mask should remain available for downstream analyses.
 
 ## References

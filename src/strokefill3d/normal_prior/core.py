@@ -21,6 +21,19 @@ def file_hash(path):
     return h.hexdigest()
 
 
+def load_checkpoint_snapshot(path, expected_sha256=None):
+    """Hash and load the same open file across atomic training-checkpoint updates."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+        if expected_sha256 is not None and h.hexdigest() != expected_sha256:
+            raise ValueError("Checkpoint fingerprints differ")
+        f.seek(0)
+        saved = torch.load(f, map_location="cpu", weights_only=True)
+    return saved, h.hexdigest()
+
+
 def amp(device):
     return torch.autocast(
         device.type, dtype=torch.float16, enabled=device.type == "cuda"
@@ -228,18 +241,18 @@ def load_bundle(run, checkpoint_name="best.pt", device="cuda", allow_functional=
     if not path.is_absolute():
         path = run / "prior" / path
     codec_path = run / "codec.pt"
-    saved = torch.load(path, map_location="cpu", weights_only=True)
+    saved, checkpoint_sha = load_checkpoint_snapshot(path)
     if saved.get("kind") != VERSION + "_prior":
         raise ValueError("Not a normal-prior 3D RF checkpoint")
-    if saved["codec_sha256"] != file_hash(codec_path):
-        raise ValueError("RF checkpoint and codec fingerprints differ")
-    codec = Codec(torch.load(codec_path, map_location="cpu", weights_only=True)).to(
-        device
+    codec_state, _ = load_checkpoint_snapshot(
+        codec_path, expected_sha256=saved["codec_sha256"]
     )
+    codec = Codec(codec_state).to(device)
     if not codec.quality.get("passed", False) and not allow_functional:
         raise ValueError("The codec has not passed its reconstruction gate")
     model = make_prior(saved["model_config"]).to(device).eval()
     model.load_state_dict(saved["model"])
     if saved["model_config"]["out_channels"] != codec.channels:
         raise ValueError("Code channel mismatch")
+    saved["loaded_checkpoint_sha256"] = checkpoint_sha
     return model, codec, saved

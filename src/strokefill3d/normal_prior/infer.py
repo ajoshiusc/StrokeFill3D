@@ -155,6 +155,7 @@ def main():
         },
         {
             "checkpoint_step": saved["step"],
+            "checkpoint_sha256": saved["loaded_checkpoint_sha256"],
             "codec_sha256": saved["codec_sha256"],
             "run": str(args.run),
         },

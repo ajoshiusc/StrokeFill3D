@@ -161,11 +161,7 @@ def main():
         "implementation_sha256": implementation_identity(),
         "inputs": {str(v): file_hash(v) for v in [image_path, lesion_path, brain_path]},
         "codec_sha256": saved["codec_sha256"],
-        "checkpoint_sha256": file_hash(
-            Path(args.checkpoint)
-            if Path(args.checkpoint).is_absolute()
-            else Path(args.run) / "prior" / args.checkpoint
-        ),
+        "checkpoint_sha256": saved["loaded_checkpoint_sha256"],
         "settings": vars(args),
     }
     cache = Path(str(output) + ".tiles")
