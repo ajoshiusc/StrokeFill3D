@@ -47,7 +47,7 @@ The masked-code measure uses a spatially pooled mask; code features are not stri
 
 ## Code, model and results
 
-The portable prototype is in `/home/ajoshi/Projects/StrokeFill3D/experiments/normal_code_rf_2d/`. It explicitly supports **2D 64×64** input. The old production 96³ profile is a different architecture and has not been replaced or qualified by this test. A separately trained 3D codec must first preserve fine cortical detail, followed by a 3D RF prior and generated validation. Do not feed this 2D checkpoint to a 96³ run.
+The portable prototype is in `experiments/normal_code_rf_2d/`. It explicitly supports **2D 64×64** input. The 96³ model is a different architecture and is not replaced or qualified by this test. A separately trained 3D codec must first preserve fine cortical detail, followed by a 3D RF prior and generated validation. The 2D checkpoint cannot be used in a 96³ run.
 
 Local model: `step_020000.pt`; codec: `codec.pt`. Exact hashes are in `summary.json`. MRI-bearing caches, examples and weights remain outside Git.
 
@@ -59,4 +59,4 @@ Comparisons:
 
 **The sensible next step is to review these improved but imperfect 2D results and validate the 3D representation; this report is not a recommendation to launch another long 96³ run yet.**
 
-Shared experiment copy: `/deneb_disk/data/stroke_inpainting/experiments/normal_rf_2d64_local2060_20261126`. It contains the paired codec, step-20000 weights, code bank and fixed cases. This directory is explicitly separate from all 96³ production runs.
+An optional experiment archive may contain the paired codec, step-20,000 weights, code bank and fixed cases under `$STROKEFILL_DATA_ROOT/experiments/`. These artifacts are separate from all 96³ training runs and are not distributed with this repository.

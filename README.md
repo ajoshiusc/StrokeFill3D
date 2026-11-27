@@ -1,65 +1,52 @@
 # StrokeFill3D
 
-StrokeFill3D is research software for 3D T1 MRI stroke-lesion inpainting using a **normal-code rectified-flow prior**. The selected workflow trains a new 3D autoencoder and a complete normal-code RF prior, then fits the initial RF noise to the observed MRI during inpainting.
+StrokeFill3D is research software for filling missing regions in 3D T1 brain MRI. It uses a 3D autoencoder and a rectified-flow model trained to generate latent codes for normal brain tissue. During inpainting, the model fits its generated anatomy to the visible MRI around a stroke mask. The fill is an estimate; the healthy anatomy hidden by a real stroke is unknown.
 
-The training guide is written for a computer with an **NVIDIA GeForce RTX 4090 graphics card (GPU)**. It trains on **96×96×96 MRI patches**, compresses them to **48×48×48 latent codes**, and checks generated inpainting during training. This is the larger GPU used for the full training run; smaller GPUs can run the preflight but may not have enough memory or speed for full training. Generated anatomy is an estimate, not recovered patient ground truth.
+## Model overview
 
-## Install
+The autoencoder compresses each 96³ MRI patch to a 48³ latent grid. A rectified-flow prior learns to generate complete normal-tissue codes from Gaussian noise, using MNI position as a location cue. At inference, the initial noise is adjusted to match visible MRI intensities and neighboring gradients. A frozen decoder turns the fitted code into an MRI patch, and observed voxels are copied back unchanged.
+
+![StrokeFill3D training and inference architecture](docs/images/model_overview.svg)
+
+## Example result
+
+This real cortical-stroke example compares the masked input, original T1, and inpainted T1 in coronal, sagittal, and axial views. It uses a saved checkpoint, two-voxel mask dilation, 32 flow steps, and 240 source-fitting updates. The larger inference budget reduced the visible-context fitting error but did not clearly sharpen cortical folds. The original tissue inside the lesion is unavailable for comparison.
+
+![Masked input, original T1, and inpainted T1 example](docs/images/real_stroke_example.png)
+
+More about the example and how to run inference: [real-stroke guide](docs/REAL_STROKE_EXAMPLE.md).
+
+## Training on an NVIDIA GPU
+
+The full training instructions target a computer with an **NVIDIA GeForce RTX 4090 graphics card (GPU)**. The model uses 96³ MRI patches. Smaller GPUs can run the software preflight but may not have enough memory or speed for full training. The guide explains installation, data setup, preflight, training, resume, validation, and inference: [4090 training guide](docs/NORMAL_PRIOR_4090.md).
+
+The basic setup is:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-# Install a CUDA-enabled PyTorch 2.6 wheel appropriate to your driver first.
+# Install a CUDA-enabled PyTorch 2.6 wheel compatible with the installed NVIDIA driver.
 python -m pip install -e .
 ```
 
-The working local environment uses PyTorch 2.6.0, MONAI 1.5.2 and CUDA 12.4. Reuse the existing remote environment and run `python -m pip install -e .` after pulling to install the declared Pillow dependency.
-
-## Train on an NVIDIA RTX 4090 GPU
-
-Full commands, stage details, resume instructions and inference are in [the normal-prior 4090 guide](docs/NORMAL_PRIOR_4090.md).
+Set `STROKEFILL_DATA_ROOT` to the directory containing authorized MRI data and manifests. The preflight command checks execution; it uses untrained weights and does not produce a quality result.
 
 ```bash
-git pull
-source .venv/bin/activate
-python -m pip install -e .
-bash scripts/train_normal_prior_4090.sh /tmp/normal_prior_4090_preflight --preflight
-
-# Run inside tmux. Each host/attempt gets its own models and code cache.
-RUN="/deneb_disk/data/stroke_inpainting/runs/normal_prior_4090_$(hostname -s)_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$RUN/logs"
-set -o pipefail
-bash scripts/train_normal_prior_4090.sh "$RUN" 2>&1 | tee "$RUN/logs/train.log"
-```
-
-The pipeline trains the **3D AE from scratch**, checks its fine-detail reconstruction, freezes/calibrates it, builds a training-only code bank, and trains the **3D RF from scratch**. It stops if AE quality fails its gate. Old 2D or mask-conditioned RF weights cannot initialize this architecture. Continue an interrupted run with the same `RUN` and `--resume`.
-
-The RF learns straight paths from independent Gaussian noise to complete nonlesional codes, conditioned only on MNI position. Source fitting backpropagates through the frozen RF and decoder using visible intensities and visible-pair gradients. This retains RF as the generator; there is no regression completion head, critic, retrieved target patch, output sharpening or Gaussian tile averaging.
-
-## Data and validation
-
-Authorized ATLAS3 scans are already available under `/deneb_disk/ATLAS3/`; manifests live under `/deneb_disk/data/stroke_inpainting/manifests/`. For a new installation, follow [the data guide](docs/DATA.md) and build manifests with `python scripts/build_atlas3_training_manifests.py`. Dataset access terms still apply; this repository contains no MRI data or model weights.
-
-Targets are nonlesional regions from stroke scans. Full training crops must avoid the real lesion and a three-voxel exclusion margin. The existing split uses 1,172 training scans from 44 sites, 84 validation scans from five sites, and a reserved 196-scan test set from six sites. Reserved test MRIs are not loaded by this workflow. Training-site lesion masks supply shapes for fixed cortical validation holes; the RF itself learns complete normal codes.
-
-AE oracle reconstruction and actual inpainting are reported separately. RF checkpoints are selected using actual generated validation, with a more expensive two-seed evaluation at the end. Every preview has corresponding NIfTI outputs and metrics. Outside-mask values are preserved exactly, and hidden intensities are excluded from inference normalization and fitting.
-
-## Tests
-
-```bash
-python -m unittest discover -s tests -v
-python -m unittest discover -s experiments/normal_code_rf_2d -p 'test_*.py' -v
+export STROKEFILL_DATA_ROOT=/path/to/data
 bash scripts/train_normal_prior_4090.sh /tmp/normal_prior_preflight --preflight
 ```
 
-The real 96³ preflight includes configured RF batch 2, AE/RF backward passes, checkpoint reload, source gradients and NIfTI IO. It passed locally on the RTX 2060. It uses untrained weights and demonstrates execution, not realistic 3D output quality.
+## Data and validation
 
-## Earlier experiments
+MRI scans, lesion masks, manifests, and trained model weights are not included. Dataset preparation and access requirements are described in the [data guide](docs/DATA.md). The training pipeline excludes real lesion regions from its normal-tissue targets and keeps a subject-level test set separate from training and validation.
 
-The [portable 2D normal-code RF prototype](experiments/normal_code_rf_2d/README.md), [2D follow-up report](docs/NORMAL_CODE_RF_2D_20261126.md), and [earlier quality review](docs/2D_QUALITY_GATE_20261126.md) preserve the evidence motivating this port, including failures. The [older anatomical 4090 workflow](docs/ANATOMICAL_4090.md), legacy `strokefill-train` / `strokefill-infer` entry points, pixel-RF configurations and deterministic SwinUNETR baseline remain available for reproducibility. They do **not** train the selected normal-prior model. Use `scripts/train_normal_prior_4090.sh` for the new run.
+The software and training stages have functional checks, but trained 3D anatomical quality remains under evaluation. Plausible folds should not be interpreted as the patient's recovered pre-stroke anatomy. See [the 2D development results](docs/NORMAL_CODE_RF_2D_20261126.md) and [the quality review](docs/2D_QUALITY_GATE_20261126.md) for earlier results and limitations.
+
+## Further documentation
+
+- [3D training and inference on an NVIDIA RTX 4090](docs/NORMAL_PRIOR_4090.md)
+- [Data staging and manifests](docs/DATA.md)
+- [Real cortical-stroke inference example](docs/REAL_STROKE_EXAMPLE.md)
+- [2D prototype](experiments/normal_code_rf_2d/README.md)
 
 Licensed under Apache-2.0. Research software; not validated for clinical decisions.
-
-## Example: real cortical stroke
-
-The [real cortical stroke example](docs/REAL_STROKE_EXAMPLE.md) shows a masked T1, original scan, and model inpainting. The example uses 32 flow steps and 240 source-fitting updates. The fill is an estimate; the hidden normal anatomy is unknown. Model weights and source NIfTIs are not included in this repository.

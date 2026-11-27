@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">StrokeFill3D model overview</title>
+  <desc id="desc">Training compresses nonlesional T1 MRI patches into latent codes and trains a rectified-flow prior from Gaussian noise to normal codes with MNI coordinates. Inference combines an observed T1, stroke mask, and coordinates; source fitting matches visible anatomy through the frozen prior and decoder, then the decoded patch is merged with the observed T1.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M1 1L11 6L1 11Z" fill="#526174"/></marker>
+    <style>
+      text{font-family:Inter,Arial,sans-serif;fill:#172033}.title{font-size:34px;font-weight:700}.subtitle{font-size:20px;fill:#526174}.section{font-size:23px;font-weight:700}.label{font-size:18px;font-weight:650}.detail{font-size:15px;fill:#475569}.box{stroke-width:2;rx:18}.arrow{stroke:#526174;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="#f7f9fc"/>
+  <text x="64" y="66" class="title">StrokeFill3D · 3D normal-code rectified flow</text>
+  <text x="64" y="101" class="subtitle">A frozen latent prior proposes normal anatomy; visible T1 tissue guides the inpainting fit.</text>
+
+  <rect x="48" y="135" width="1504" height="330" rx="24" fill="#ffffff" stroke="#d9e1ec" stroke-width="2"/>
+  <text x="76" y="178" class="section">Training · nonlesional T1 patches</text>
+  <rect x="78" y="216" width="255" height="155" class="box" fill="#e8f3ff" stroke="#85b8eb"/>
+  <text x="205" y="260" text-anchor="middle" class="label">T1 MRI patch</text>
+  <text x="205" y="291" text-anchor="middle" class="detail">96 × 96 × 96 voxels</text>
+  <text x="205" y="322" text-anchor="middle" class="detail">lesion and margin excluded</text>
+  <path d="M344 294H408" class="arrow"/>
+  <rect x="425" y="216" width="290" height="155" class="box" fill="#e7f7f1" stroke="#78c6a8"/>
+  <text x="570" y="260" text-anchor="middle" class="label">3D autoencoder</text>
+  <text x="570" y="291" text-anchor="middle" class="detail">encodes then reconstructs T1</text>
+  <text x="570" y="322" text-anchor="middle" class="detail">trained first, then frozen</text>
+  <path d="M726 294H790" class="arrow"/>
+  <rect x="807" y="216" width="275" height="155" class="box" fill="#f1edff" stroke="#a995ed"/>
+  <text x="944" y="260" text-anchor="middle" class="label">Normal latent codes</text>
+  <text x="944" y="291" text-anchor="middle" class="detail">48 × 48 × 48 grid</text>
+  <text x="944" y="322" text-anchor="middle" class="detail">complete normal tissue target</text>
+  <path d="M1093 294H1157" class="arrow"/>
+  <rect x="1174" y="202" width="340" height="183" class="box" fill="#fff3df" stroke="#e7b760"/>
+  <text x="1344" y="244" text-anchor="middle" class="label">3D rectified-flow prior</text>
+  <text x="1344" y="277" text-anchor="middle" class="detail">Gaussian noise → normal code</text>
+  <text x="1344" y="308" text-anchor="middle" class="detail">conditioned on MNI x, y, z</text>
+  <text x="1344" y="347" text-anchor="middle" class="detail">trained from scratch</text>
+  <text x="80" y="420" class="detail">The prior learns a path from noise to a complete latent representation of normal brain tissue.</text>
+
+  <rect x="48" y="492" width="1504" height="458" rx="24" fill="#ffffff" stroke="#d9e1ec" stroke-width="2"/>
+  <text x="76" y="536" class="section">Inference · a T1 scan with a stroke mask</text>
+  <rect x="78" y="580" width="245" height="126" class="box" fill="#e8f3ff" stroke="#85b8eb"/>
+  <text x="200" y="620" text-anchor="middle" class="label">Observed T1 patch</text>
+  <text x="200" y="653" text-anchor="middle" class="detail">96³ voxels; hole hidden</text>
+  <rect x="78" y="734" width="245" height="103" class="box" fill="#fff0ef" stroke="#e8a09a"/>
+  <text x="200" y="775" text-anchor="middle" class="label">Stroke mask</text>
+  <text x="200" y="806" text-anchor="middle" class="detail">selects the missing region</text>
+  <path d="M334 641H410M334 786H382V676H410" class="arrow"/>
+  <rect x="428" y="580" width="340" height="257" class="box" fill="#f5f1ff" stroke="#a995ed"/>
+  <text x="598" y="620" text-anchor="middle" class="label">Fit Gaussian source</text>
+  <text x="598" y="656" text-anchor="middle" class="detail">flow prior + frozen decoder</text>
+  <text x="598" y="697" text-anchor="middle" class="detail">match visible T1 intensities</text>
+  <text x="598" y="728" text-anchor="middle" class="detail">and known-neighbor gradients</text>
+  <text x="598" y="779" text-anchor="middle" class="detail">MNI x, y, z position maps</text>
+  <path d="M776 708H840" class="arrow"/>
+  <rect x="857" y="580" width="260" height="257" class="box" fill="#fff3df" stroke="#e7b760"/>
+  <text x="987" y="624" text-anchor="middle" class="label">Generated code</text>
+  <text x="987" y="661" text-anchor="middle" class="detail">16 flow steps by default</text>
+  <path d="M1125 708H1188" class="arrow"/>
+  <rect x="1205" y="580" width="300" height="126" class="box" fill="#e7f7f1" stroke="#78c6a8"/>
+  <text x="1355" y="620" text-anchor="middle" class="label">Decoded T1 patch</text>
+  <text x="1355" y="653" text-anchor="middle" class="detail">estimated normal tissue fill</text>
+  <rect x="1205" y="734" width="300" height="103" class="box" fill="#e8f3ff" stroke="#85b8eb"/>
+  <text x="1355" y="775" text-anchor="middle" class="label">Inpainted T1</text>
+  <text x="1355" y="806" text-anchor="middle" class="detail">observed voxels copied exactly</text>
+  <path d="M1355 714V725" class="arrow"/>
+  <path d="M200 710V855H1355V846" stroke="#23836b" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <rect x="670" y="840" width="345" height="30" rx="10" fill="#ffffff"/>
+  <text x="842" y="862" text-anchor="middle" class="detail">copy observed voxels unchanged</text>
+  <path d="M112 892H1490" stroke="#e2e8f0" stroke-width="2"/>
+  <text x="800" y="925" text-anchor="middle" class="detail">The filled anatomy is an estimate; the healthy tissue hidden by a real stroke is unknown.</text>
+</svg>

@@ -12,10 +12,10 @@ An RTX 4090 is a high-memory NVIDIA graphics card (GPU) used here to train the 3
 
 ## Set up, check the GPU, and start training
 
-Use your existing remote checkout and CUDA environment. Do not start this alongside another GPU trainer.
+Use a repository checkout on the computer with the NVIDIA RTX 4090 GPU and an installed CUDA environment. Only one GPU training job should use that card at a time.
 
 ```bash
-cd /home/ajoshi/Projects/StrokeFill3D
+cd /path/to/StrokeFill3D
 git pull
 source .venv/bin/activate
 python -m pip install -e .
@@ -30,9 +30,10 @@ Start a persistent terminal, then a new run:
 
 ```bash
 tmux new -s normal_prior_4090
-cd /home/ajoshi/Projects/StrokeFill3D
+cd /path/to/StrokeFill3D
 source .venv/bin/activate
-RUN="/deneb_disk/data/stroke_inpainting/runs/normal_prior_4090_$(hostname -s)_$(date +%Y%m%d_%H%M%S)"
+DATA_ROOT="${STROKEFILL_DATA_ROOT:-/path/to/data}"
+RUN="$DATA_ROOT/runs/normal_prior_4090_$(hostname -s)_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN/logs"
 printf '%s\n' "$RUN" > "$RUN/logs/run_directory.txt"
 set -o pipefail
@@ -60,7 +61,7 @@ The first command has to pass the gate before continuing. Changing the latent re
 
 ## Shared data and isolation
 
-The launcher uses existing authorized ATLAS3 data and manifests at `/deneb_disk/data/stroke_inpainting/manifests/`:
+The launcher reads authorized MRI data and manifests from the directory set by `STROKEFILL_DATA_ROOT`:
 
 - Training: `atlas3_train.csv`, 1,172 scans / 44 sites.
 - Training-only donor shapes: `atlas3_masks_train.csv`. Used to construct synthetic validation holes, not to train the complete-code RF.

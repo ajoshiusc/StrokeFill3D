@@ -50,7 +50,7 @@ A further RF experiment should establish a stronger healthy-anatomy generative p
 
 Before any long 96³ run, require improved fold continuity and normal tissue appearance on fixed masked cortical examples, adequate full ROI context, preserved known tissue, and independent subject-level checks. No 3D 96³ model was trained or launched in this review.
 
-Local review artifacts: `/home/ajoshi/Documents/Codex/2026-11-24/i-x20/outputs/2d_rf_quality_review_centered/`. MRI-bearing artifacts are not stored in this repository.
+Review artifacts are stored outside the repository in the experiment workspace. MRI-bearing files are not stored in this repository.
 
 ## Review artifacts
 

@@ -6,22 +6,23 @@ This is a new model and a new training run. It is intended to address the mottle
 
 The [normal-code RF 2D follow-up](NORMAL_CODE_RF_2D_20261126.md) shows improved decoded structure, with remaining failures. Its source code is under `experiments/normal_code_rf_2d/`. The commands below remain the **older 3D architecture**; they will not train the new normal-code prior. Do not substitute its 2D checkpoint into this workflow.
 
-## Start on the remote machine
+## Start on the training computer
 
-From your existing checkout and environment:
+From the existing project checkout and CUDA environment:
 
 ```bash
-cd /home/ajoshi/Projects/StrokeFill3D
+cd /path/to/StrokeFill3D
 git pull
 source .venv/bin/activate
 # Reuse the working PyTorch/MONAI environment from the previous run.
 
 # One real training update and a short generated validation reconstruction.
-# This reports actual peak VRAM on YOUR 4090 and writes no training checkpoint.
+# This reports peak VRAM on the configured GPU and writes no training checkpoint.
 bash scripts/train_anatomical_4090.sh /tmp/strokefill_anatomical_preflight --preflight
 
 # Use a distinct directory for this host and attempt, on the shared data disk.
-RUN="/deneb_disk/data/stroke_inpainting/runs/anatomical_4090_$(hostname -s)_$(date +%Y%m%d_%H%M%S)"
+DATA_ROOT="${STROKEFILL_DATA_ROOT:-/path/to/data}"
+RUN="$DATA_ROOT/runs/anatomical_4090_$(hostname -s)_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN/logs"
 printf '%s\n' "$RUN" > "$RUN/logs/run_directory.txt"
 set -o pipefail

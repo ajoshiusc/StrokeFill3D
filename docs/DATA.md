@@ -1,6 +1,6 @@
 # Data staging
 
-MRI data are not tracked in Git. The local ATLAS3 data at `/deneb_disk/ATLAS3/ATLAS3_Training_Preprocessed` can supply nonlesional target patches and donor masks. Run `scripts/build_atlas3_training_manifests.py` to pair T1/mask files, reserve whole sites for holdout, and write local manifests under `/deneb_disk/data/stroke_inpainting/manifests/`.
+MRI data are not tracked in Git. Authorized stroke MRI can supply nonlesional target patches and donor masks. Set `STROKEFILL_DATA_ROOT` to the data directory on the training computer. Run `scripts/build_atlas3_training_manifests.py` to pair T1/mask files, reserve whole sites for holdout, and write manifests under that data directory.
 
 ## Candidate sources
 
@@ -15,7 +15,7 @@ Record dataset version, source URL, access date, license/DUA, subject identifier
 ## Suggested layout
 
 ```text
-/deneb_disk/data/stroke_inpainting/
+$STROKEFILL_DATA_ROOT/
   healthy_t1/       # authorized, defaced T1 NIfTI files
   masks_atlas/      # authorized masks, optional
   manifests/        # train/validation/test CSVs

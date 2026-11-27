@@ -18,7 +18,7 @@ Activate the project environment, then set the run directory and file paths:
 cd /path/to/StrokeFill3D
 source .venv/bin/activate
 
-RUN=/path/to/your/training_run
+RUN=/path/to/training_run
 T1=/path/to/MNI_T1.nii.gz
 MASK=/path/to/MNI_lesion_mask.nii.gz
 ```
