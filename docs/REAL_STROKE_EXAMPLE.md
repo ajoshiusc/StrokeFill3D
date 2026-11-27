@@ -1,37 +1,44 @@
-# Real ATLAS3 cortical stroke example
+# Real cortical stroke example
 
-This example applies the normal-code rectified-flow model to the ATLAS3 case R015s001 using the real T1 lesion mask. It documents one inference result, not a clinical evaluation or evidence that the hidden pre-stroke anatomy has been recovered.
+This page shows how to run the 3D normal-prior model on a T1 scan with a real cortical stroke mask. The figure is one example of the model's output; it does not show ground-truth anatomy inside the lesion.
 
-![Masked input, original T1, and model inpainting for R015s001](images/R015s001_real_stroke_example.png)
+![Masked T1, original scan, and model inpainting in three orthogonal views](images/real_stroke_example.png)
 
-The figure shows the masked input with the two-voxel dilated lesion boundary, original T1, and inpainted T1 in coronal, sagittal, and axial views. Display uses one shared 1st–99th percentile intensity window and nearest-neighbor enlargement, with no sharpening. The inference preserved image values outside the dilated mask exactly.
+The three columns show the masked input with the lesion outline, the original scan, and the inpainted result. The figure uses one intensity window for all images and has no sharpening. The lesion mask was dilated by two voxels before filling. Values outside that expanded mask are copied directly from the input.
 
-The result used the 96³ normal-prior model at RF checkpoint step 89,500, Gaussian source seed 909, 32 Euler flow steps, 240 source-fitting updates, and two voxels of unconditional mask dilation. These settings were used to compare with the same checkpoint at 16 steps and 120 updates. The larger inference budget reduced the observed-context fitting MSE from 0.0119 to 0.0066, but did not produce a clear visual improvement in fine sulcal detail. There is no healthy ground-truth MRI under the real lesion, so a quantitative reconstruction score for the hidden tissue is unavailable.
+The example used a saved 96³ model checkpoint, seed 909, 32 flow steps, and 240 source-fitting updates. Those last two values are higher than the command defaults of 16 flow steps and 120 updates. Increasing them reduced the fitting error on visible voxels, but did not make the cortical folds clearly sharper. The tissue hidden by a real stroke has no known healthy reference, so the image cannot confirm that the generated anatomy is correct.
 
 ## Run inference
 
-First train a run or point `RUN` to an existing run directory that contains the paired `codec.pt` and RF checkpoints. Register the T1 and lesion mask to the same axis-aligned, 1-mm MNI RAS grid before inference; this command does not register or resample inputs. The checkpoint must have been trained with the codec in `RUN`.
+The input T1 and stroke mask must already be registered to the same 1-mm MNI grid. This command does not register or resample them. It checks that they share a grid and stops if a lesion component cannot fit inside the trained 96³ patch with enough surrounding context.
+
+Activate the project environment, then set the run directory and file paths:
 
 ```bash
 cd /path/to/StrokeFill3D
 source .venv/bin/activate
 
-RUN=/path/to/normal_prior_run
+RUN=/path/to/your/training_run
 T1=/path/to/MNI_T1.nii.gz
 MASK=/path/to/MNI_lesion_mask.nii.gz
-CHECKPOINT="$RUN/prior/best.pt"
+```
 
+Run the inpainting command:
+
+```bash
 python -m strokefill3d.normal_prior.infer \
   --run "$RUN" \
-  --checkpoint "$CHECKPOINT" \
+  --checkpoint "$RUN/prior/best.pt" \
   --image "$T1" \
   --mask "$MASK" \
   --output /path/to/inpainted_T1.nii.gz \
-  --mni \
-  --flow-steps 32 \
-  --iterations 240
+  --mni
 ```
 
-`--mni` is required and acknowledges that the supplied files are already aligned to the expected MNI grid. Defaults are CUDA inference, 16 flow steps, 120 source-fitting updates, seed 909, and two-voxel unconditional dilation. Override those settings only when desired. Each connected mask component must fit within a 96³ window with at least eight voxels of observed context on every side; larger components fail explicitly. The output NIfTI is in the source T1 intensity units and is accompanied by a JSON sidecar recording checkpoint and inference settings.
+`--mni` is required. It confirms that the inputs are already in the expected MNI grid; it does not transform them. By default, inference uses CUDA, 16 flow steps, 120 source-fitting updates, seed 909, and two-voxel unconditional mask dilation. To try the higher inference budget shown in the example, add:
 
-The screenshot is provided as a documentation example. The NIfTI source, lesion mask, output volume, and trained checkpoint are not distributed with this repository; ATLAS3 access and use remain subject to the dataset terms.
+```bash
+  --flow-steps 32 --iterations 240
+```
+
+The run directory must contain `codec.pt` and the checkpoint trained with that codec. The output NIfTI stays in the source T1 intensity units. A JSON sidecar records the checkpoint and inference settings. The repository includes only the rendered example figure; scans, lesion masks, and trained weights are not included.

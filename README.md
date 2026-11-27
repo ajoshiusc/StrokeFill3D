@@ -62,4 +62,4 @@ Licensed under Apache-2.0. Research software; not validated for clinical decisio
 
 ## Example: real cortical stroke
 
-The [R015s001 example](docs/REAL_STROKE_EXAMPLE.md) shows an ATLAS3 cortical stroke with its two-voxel dilated lesion mask, original T1, and model inpainting. The image was generated using RF checkpoint step 89,500 with 32 flow steps and 240 source-fitting updates. The fill is an estimate; the hidden normal anatomy is unknown. Model weights and source NIfTIs are not included in this repository.
+The [real cortical stroke example](docs/REAL_STROKE_EXAMPLE.md) shows a masked T1, original scan, and model inpainting. The example uses 32 flow steps and 240 source-fitting updates. The fill is an estimate; the hidden normal anatomy is unknown. Model weights and source NIfTIs are not included in this repository.
