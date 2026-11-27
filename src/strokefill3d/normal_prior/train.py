@@ -564,7 +564,18 @@ def train_prior(cfg, cache, cases, out, device, resume=False, max_steps=None):
                 + json.dumps(
                     {
                         k: result[k]
-                        for k in ["step", "masked_mae", "masked_ssim", "gradient_mae"]
+                        for k in [
+                            "step",
+                            "masked_mae",
+                            "masked_ssim",
+                            "gradient_mae",
+                            "interior_ssim",
+                            "interior_gradient_cosine",
+                            "interior_gradient_ratio",
+                            "interior_gradient_mae",
+                            "interior_scored_cases",
+                            "quality_status",
+                        ]
                     }
                 )
             )

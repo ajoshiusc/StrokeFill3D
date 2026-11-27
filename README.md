@@ -40,7 +40,7 @@ bash scripts/train_normal_prior_4090.sh /tmp/normal_prior_preflight --preflight
 
 MRI scans, lesion masks, manifests, and trained model weights are not included. Dataset preparation and access requirements are described in the [data guide](docs/DATA.md). The training pipeline excludes real lesion regions from its normal-tissue targets and keeps a subject-level test set separate from training and validation.
 
-The software and training stages have functional checks, but trained 3D anatomical quality remains under evaluation. Plausible folds should not be interpreted as the patient's recovered pre-stroke anatomy. See [the 2D development results](docs/NORMAL_CODE_RF_2D_20261126.md) and [the quality review](docs/2D_QUALITY_GATE_20261126.md) for earlier results and limitations.
+The software and training stages have functional checks, but trained 3D anatomical quality remains under evaluation. Plausible folds should not be interpreted as the patient's recovered pre-stroke anatomy. The [latest quality review](docs/QUALITY_REVIEW_20261127.md) explains why another long training run is not yet qualified. Earlier [2D development results](docs/NORMAL_CODE_RF_2D_20261126.md) remain available.
 
 ## Further documentation
 

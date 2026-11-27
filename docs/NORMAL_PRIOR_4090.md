@@ -1,5 +1,7 @@
 # Train the 3D model with an NVIDIA RTX 4090 GPU
 
+Current quality status: the small cortical-recovery experiments have not qualified an improved recipe for another long run. This guide documents the existing research model; see the [latest quality review](QUALITY_REVIEW_20261127.md) before allocating training time.
+
 An RTX 4090 is a high-memory NVIDIA graphics card (GPU) used here to train the 3D model. This guide starts a **new 3D autoencoder and 3D rectified-flow model from scratch**. The model processes 96×96×96 MRI patches. A short preflight checks that the software and GPU run correctly; it does not train a useful model. The full training job takes much longer and saves checkpoints as it runs. The old 2D and earlier mask-conditioned checkpoints cannot be reused.
 
 ## Method and defaults
@@ -79,6 +81,8 @@ The cache contains 8,192 training codes in 16-item shards: about 11.8 GiB at sev
 AE reconstruction and actual RF inpainting have separate reports. RF checkpoint selection uses actual inpainting at fixed validation coordinates, masks and seed 909, every 2,000 updates: 8 flow steps and 40 source iterations. It uses a combination of masked MAE, masked-center SSIM and gradient MAE. These are development subjects that have been inspected, not an untouched clinical benchmark.
 
 At the end, the selected best checkpoint is evaluated with the full 16-step/120-iteration protocol and seeds 909 and 910. A short selection protocol can rank checkpoints differently from the full protocol, so inspect the final output before trusting the selection. No oracle target enters source fitting or seed selection.
+
+Validation JSON and training logs also report interior SSIM, gradient direction alignment, gradient amplitude ratio and the number of cases with a scoreable interior. These expose blur and excess texture away from the copied context. They are additional diagnostics; the existing checkpoint-selection formula is unchanged. An AE gate pass or a checkpoint named `best.pt` does not qualify generated anatomical quality.
 
 ```text
 RUN/run.json                          configuration and manifest identity
