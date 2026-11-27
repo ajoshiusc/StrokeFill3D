@@ -59,3 +59,7 @@ The real 96³ preflight includes configured RF batch 2, AE/RF backward passes, c
 The [portable 2D normal-code RF prototype](experiments/normal_code_rf_2d/README.md), [2D follow-up report](docs/NORMAL_CODE_RF_2D_20261126.md), and [earlier quality review](docs/2D_QUALITY_GATE_20261126.md) preserve the evidence motivating this port, including failures. The [older anatomical 4090 workflow](docs/ANATOMICAL_4090.md), legacy `strokefill-train` / `strokefill-infer` entry points, pixel-RF configurations and deterministic SwinUNETR baseline remain available for reproducibility. They do **not** train the selected normal-prior model. Use `scripts/train_normal_prior_4090.sh` for the new run.
 
 Licensed under Apache-2.0. Research software; not validated for clinical decisions.
+
+## Example: real cortical stroke
+
+The [R015s001 example](docs/REAL_STROKE_EXAMPLE.md) shows an ATLAS3 cortical stroke with its two-voxel dilated lesion mask, original T1, and model inpainting. The image was generated using RF checkpoint step 89,500 with 32 flow steps and 240 source-fitting updates. The fill is an estimate; the hidden normal anatomy is unknown. Model weights and source NIfTIs are not included in this repository.
