@@ -1,0 +1,222 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import nibabel as nib
+import numpy as np
+import torch
+
+from strokefill3d.normal_prior.external_infer import extract_patch, main, plan_tiles
+from strokefill3d.normal_prior.preprocess import aligned, canonical
+
+
+class ExternalMRITests(unittest.TestCase):
+    def test_large_disconnected_and_boundary_lesions_have_interior_ownership(self):
+        m = np.zeros((121, 133, 117), bool)
+        m[:12, :20, :10] = True
+        m[40:118, 30:125, 30:110] = True
+        m[-1, -1, -1] = True
+        plans = plan_tiles(m)
+        coverage = np.zeros(m.shape, np.uint8)
+        for start, owned in plans:
+            local = owned - start
+            self.assertTrue(np.all(local >= 12))
+            self.assertTrue(np.all(local < 84))
+            self.assertTrue(m[tuple(owned.T)].all())
+            coverage[tuple(owned.T)] += 1
+            local_mask = extract_patch(m, start, fill=False)
+            self.assertTrue(local_mask[tuple(local.T)].all())
+        np.testing.assert_array_equal(coverage, m.astype(np.uint8))
+
+    def test_complete_inference_hides_all_local_injury_preserves_context_and_resumes(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "run"
+            (run / "prior").mkdir(parents=True)
+            (run / "prior/best.pt").write_bytes(b"checkpoint")
+            shape = (105, 109, 112)
+            rng = np.random.default_rng(8)
+            a = rng.uniform(10, 90, shape).astype(np.float32)
+            brain = np.zeros(shape, np.uint8)
+            brain[3:-3, 3:-3, 3:-3] = 1
+            a[brain == 0] = 0
+            lesion = np.zeros(shape, np.uint8)
+            lesion[4:95, 20:95, 20:100] = 1
+            lesion[98:101, 30:38, 30:38] = 1
+            affine = np.eye(4)
+            affine[:3, 3] = [-50, -60, -40]
+            for name, data in [
+                ("t1_brain_training", a),
+                ("lesion_training", lesion),
+                ("brain_mask_training", brain),
+            ]:
+                nib.save(nib.Nifti1Image(data, affine), root / (name + ".nii.gz"))
+            (root / "preprocessing.json").write_text(
+                json.dumps(
+                    {
+                        "qc": {
+                            "brain_mask_dice_with_template": 0.95,
+                            "nonpositive_jacobian_voxels_in_brain": 0,
+                        }
+                    }
+                )
+            )
+            calls = []
+
+            def fit(model, codec, image, mask, coords, **kw):
+                self.assertTrue(torch.all(image[mask > 0] == 0))
+                self.assertGreater(mask.sum().item(), 0)
+                calls.append(mask.sum().item())
+                return torch.where(mask > 0, 0.25, image), None, None, []
+
+            bundle = (
+                None,
+                SimpleNamespace(patch_size=(96, 96, 96), factor=2),
+                {"step": 42, "codec_sha256": "test"},
+            )
+            output = root / "output.nii.gz"
+            argv = [
+                "external_infer",
+                "--prepared",
+                str(root),
+                "--run",
+                str(run),
+                "--output",
+                str(output),
+                "--device",
+                "cpu",
+                "--iterations",
+                "0",
+                "--mask-dilation-voxels",
+                "0",
+            ]
+            with (
+                patch("sys.argv", argv),
+                patch(
+                    "strokefill3d.normal_prior.external_infer.load_bundle",
+                    return_value=bundle,
+                ),
+                patch(
+                    "strokefill3d.normal_prior.external_infer.fit_source",
+                    side_effect=fit,
+                ),
+            ):
+                main()
+                count = len(calls)
+                self.assertGreater(count, 0)
+                b = np.asarray(nib.load(output).dataobj)
+                np.testing.assert_array_equal(a[lesion == 0], b[lesion == 0])
+                self.assertTrue(np.isfinite(b).all())
+                main()
+                self.assertEqual(len(calls), count)
+                # Input mutation invalidates caches even if paths stay the same.
+                altered = a.copy()
+                altered[5, 5, 5] += 1
+                nib.save(
+                    nib.Nifti1Image(altered, affine), root / "t1_brain_training.nii.gz"
+                )
+                with self.assertRaisesRegex(ValueError, "cache belongs"):
+                    main()
+
+    def test_affine_preprocessing_records_serializable_commands_and_skips_syn(self):
+        from scipy.io import savemat
+
+        from strokefill3d.normal_prior.preprocess import main as prepare
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            shape = (80, 80, 80)
+            brain = np.zeros(shape, np.uint8)
+            brain[10:70, 10:70, 10:70] = 1
+            image = (brain * 80).astype(np.float32)
+            lesion = np.zeros(shape, np.uint8)
+            lesion[30:40, 30:40, 30:40] = 1
+            for name, data in [("t1", image), ("mask", brain), ("lesion", lesion)]:
+                nib.save(nib.Nifti1Image(data, np.eye(4)), root / (name + ".nii.gz"))
+            out = root / "prepared"
+            commands = []
+
+            def execute(command, **kwargs):
+                command = list(map(str, command))
+                commands.append(command)
+                tool = Path(command[0]).name
+                if tool == "N4BiasFieldCorrection":
+                    destination = command[command.index("-o") + 1][1:-1].split(",")[0]
+                    nib.save(nib.Nifti1Image(image, np.eye(4)), destination)
+                elif tool == "antsRegistration":
+                    self.assertFalse(any("SyN[" in v for v in command))
+                    prefix = command[command.index("-o") + 1][1:-1].split(",")[0]
+                    parameters = np.r_[np.eye(3).reshape(-1), np.zeros(3)].reshape(
+                        -1, 1
+                    )
+                    savemat(
+                        prefix + "0GenericAffine.mat",
+                        {
+                            "AffineTransform_float_3_3": parameters,
+                            "fixed": np.zeros((3, 1)),
+                        },
+                    )
+                elif tool == "antsApplyTransforms":
+                    source = command[command.index("-i") + 1]
+                    destination = command[command.index("-o") + 1]
+                    nib.save(nib.load(source), destination)
+                else:
+                    self.fail("Unexpected command: " + tool)
+
+            argv = [
+                "preprocess",
+                "--image",
+                str(root / "t1.nii.gz"),
+                "--lesion-labels",
+                str(root / "lesion.nii.gz"),
+                "--brain-mask",
+                str(root / "mask.nii.gz"),
+                "--template",
+                str(root / "t1.nii.gz"),
+                "--template-mask",
+                str(root / "mask.nii.gz"),
+                "--output-dir",
+                str(out),
+            ]
+            with (
+                patch("sys.argv", argv),
+                patch(
+                    "strokefill3d.normal_prior.preprocess.subprocess.run",
+                    side_effect=execute,
+                ),
+            ):
+                prepare()
+            report = json.loads((out / "preprocessing.json").read_text())
+            self.assertEqual(report["registration"], "affine")
+            self.assertEqual(report["qc"]["brain_mask_dice_with_template"], 1.0)
+            self.assertEqual(report["qc"]["affine_matrix_determinant"], 1.0)
+            self.assertEqual(report["commands"], commands)
+            np.testing.assert_array_equal(
+                np.asarray(nib.load(out / "t1_brain_training.nii.gz").dataobj), image
+            )
+
+    def test_reorientation_preserves_world_coordinates_and_rejects_misalignment(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = np.arange(20 * 21 * 22, dtype=np.float32).reshape(20, 21, 22)
+            affine = np.diag([-1.0, 1.0, 1.0, 1.0])
+            affine[:3, 3] = [10, -10, -8]
+            n = nib.Nifti1Image(data, affine)
+            path = Path(d) / "las.nii.gz"
+            nib.save(n, path)
+            r = canonical(path)
+            self.assertEqual(nib.aff2axcodes(r.affine), ("R", "A", "S"))
+            np.testing.assert_array_equal(np.asarray(r.dataobj), data[::-1])
+            np.testing.assert_allclose(
+                n.affine @ np.array([19, 2, 3, 1]), r.affine @ np.array([0, 2, 3, 1])
+            )
+            with self.assertRaises(ValueError):
+                aligned(n, r)
+
+
+if __name__ == "__main__":
+    unittest.main()

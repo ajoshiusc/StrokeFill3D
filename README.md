@@ -45,6 +45,7 @@ The software and training stages have functional checks, but trained 3D anatomic
 ## Further documentation
 
 - [3D training and inference on an NVIDIA RTX 4090](docs/NORMAL_PRIOR_4090.md)
+- [External T1 and TBI preprocessing and inference](docs/EXTERNAL_DATA.md)
 - [Data staging and manifests](docs/DATA.md)
 - [Real cortical-stroke inference example](docs/REAL_STROKE_EXAMPLE.md)
 - [2D prototype](experiments/normal_code_rf_2d/README.md)
