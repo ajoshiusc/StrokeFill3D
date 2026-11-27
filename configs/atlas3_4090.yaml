@@ -1,0 +1,18 @@
+# 24 GiB RTX 4090 profile: increase 1 mm context from 64³ to 80³ while
+# keeping batch size 1 for memory headroom and lesion-free patch availability.
+patch_size: [80, 80, 80]
+spacing_mm: [1.0, 1.0, 1.0]
+samples_per_scan: 1
+batch_size: 1
+num_workers: 2
+epochs: 20
+channels: [32, 64, 128]
+attention_levels: [false, false, true]
+num_head_channels: [0, 0, 32]
+num_res_blocks: 1
+time_embedding_scale: 1000.0
+amp: true
+learning_rate: 0.0001
+weight_decay: 0.00001
+grad_clip: 1.0
+checkpoint_every_steps: 250
