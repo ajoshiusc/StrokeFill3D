@@ -1,6 +1,6 @@
 # StrokeFill3D
 
-MONAI research code for 3D T1 MRI stroke-lesion inpainting using a **normal-code rectified-flow prior**. The selected workflow trains a new 3D autoencoder and a complete normal-code RF prior, then fits the initial RF noise to the observed MRI during inpainting.
+StrokeFill3D is research software for 3D T1 MRI stroke-lesion inpainting using a **normal-code rectified-flow prior**. The selected workflow trains a new 3D autoencoder and a complete normal-code RF prior, then fits the initial RF noise to the observed MRI during inpainting.
 
 The RTX 4090 profile uses **96×96×96 MRI patches** and **48×48×48 latent codes**, with position conditioning and generated validation. It ports the [improved small 2D experiment](docs/NORMAL_CODE_RF_2D_20261126.md). Local execution is tested; trained 3D anatomical quality remains to be evaluated. Generated anatomy is an estimate, not recovered patient ground truth.
 
