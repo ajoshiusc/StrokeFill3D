@@ -37,6 +37,14 @@ SimpleITK handles bias correction and affine alignment. Brain extraction runs in
 
 ## Training on an NVIDIA GPU
 
+The new mixed-dataset training experiment uses a **conditional image-space
+rectified-flow model with 96³ patches**, based on the latest 2D comparison.
+It adds lesion-excluded EPISURG, EPIBIOS, and ARC targets, brain-based intensity
+normalization, real cortical hide-mask shapes, and validation per dataset.
+See the [mixed-dataset training guide](docs/MIXED_RF_4090.md) for the staged
+data, launch, resume, and inference commands. This candidate starts fresh and
+uses a different checkpoint format from the latent-prior model described above.
+
 The full training instructions target a computer with an **NVIDIA GeForce RTX 4090 graphics card (GPU)**. The model uses 96³ MRI patches. Smaller GPUs can run the software preflight but may not have enough memory or speed for full training. The guide explains installation, data setup, preflight, training, resume, validation, and inference: [4090 training guide](docs/NORMAL_PRIOR_4090.md).
 
 The basic setup is:

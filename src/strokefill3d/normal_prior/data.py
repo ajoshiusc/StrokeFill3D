@@ -170,7 +170,7 @@ class CounterSampler(Sampler):
         return iter(range(self.start, self.start + self.count))
 
 
-def cortical_mask(target, origin, donors, rng, margin=8):
+def cortical_mask(target, origin, donors, rng, margin=8, real_only=False):
     a = target[0].numpy()
     shape = np.array(a.shape)
     fg = a > -0.95
@@ -185,7 +185,7 @@ def cortical_mask(target, origin, donors, rng, margin=8):
     if not len(anchors):
         raise ValueError("No contextual cortical anchor")
     for _ in range(300):
-        if donors and rng.random() < 0.8:
+        if donors and (real_only or rng.random() < 0.8):
             nii = nib.load(str(donors[int(rng.integers(len(donors)))]))
             donor = np.asarray(nii.dataobj) > 0
             loc = np.argwhere(donor)
@@ -200,6 +200,8 @@ def cortical_mask(target, origin, donors, rng, margin=8):
                 float((shape - 2 * margin).min()) / max(donor.shape),
             )
             donor = zoom(donor, factor, order=0) > 0
+        elif real_only:
+            raise ValueError("Real-mask-only sampling requires training mask donors")
         else:
             n = int(rng.integers(20, min(55, int(shape.min() - 2 * margin))))
             g = np.ogrid[tuple(slice(-1, 1, complex(n)) for _ in range(3))]
