@@ -1,1 +1,36 @@
 StrokeFill3D is an independent research implementation. It is not affiliated with or endorsed by FastSurfer, MONAI, or any dataset provider.
+
+StrokeFill3D preprocessing assets
+===============================
+
+SynthStrip
+----------
+The PyTorch brain-extraction implementation follows the published SynthStrip v1
+architecture and preprocessing conventions. The official model weights are
+retrieved from the authors; they are not committed to this repository. The
+provider offers the weights under the MIT license or CC BY 4.0.
+https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/
+
+Please cite: Hoopes A, Mora JS, Dalca AV, Fischl B, Hoffmann M.
+SynthStrip: Skull-Stripping for Any Brain Image. NeuroImage 260 (2022), 119474.
+https://doi.org/10.1016/j.neuroimage.2022.119474
+
+MNI152NLin2009aSym template
+-------------------------
+The template and mask are retrieved from the TemplateFlow distribution.
+https://github.com/templateflow/tpl-MNI152NLin2009aSym
+Please acknowledge the original template authors and TemplateFlow.
+Template reference: https://doi.org/10.1016/j.neuroimage.2010.07.033
+The template distribution includes the following permission notice:
+
+Copyright (C) 1993-2004 Louis Collins, McConnell Brain
+Imaging Centre, Montreal Neurological Institute, McGill University.
+Permission to use, copy, modify, and distribute this software and
+its documentation for any purpose and without fee is hereby granted,
+provided that the above copyright notice appear in all copies.  The
+authors and McGill University make no representations about the
+suitability of this software for any purpose.  It is provided "as
+is" without express or implied warranty.  The authors are not
+responsible for any data loss, equipment damage, property loss, or
+injury to subjects or patients resulting from the use or misuse of
+this software package.

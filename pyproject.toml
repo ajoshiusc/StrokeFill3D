@@ -21,9 +21,15 @@ dependencies = [
   "Pillow>=10,<13",
 ]
 
+[project.optional-dependencies]
+preprocess = ["SimpleITK>=2.4,<3"]
+
 [project.scripts]
 strokefill-train = "strokefill3d.train:main"
 strokefill-infer = "strokefill3d.infer:main"
+strokefill-prepare = "strokefill3d.normal_prior.preprocess:main"
+strokefill-inpaint = "strokefill3d.normal_prior.external_infer:main"
+strokefill-download-assets = "strokefill3d.normal_prior.assets:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

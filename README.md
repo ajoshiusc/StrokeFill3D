@@ -16,6 +16,25 @@ This real cortical-stroke example compares the masked input, original T1, and in
 
 More about the example and how to run inference: [real-stroke guide](docs/REAL_STROKE_EXAMPLE.md).
 
+## Use a scan from another dataset
+
+External T1 preprocessing needs only Python packages. Install the preprocessing extra once:
+
+```bash
+python -m pip install -e '.[preprocess]'
+```
+
+Then prepare a T1 and its aligned binary lesion mask, and run a trained model:
+
+```bash
+strokefill-prepare --image T1.nii.gz --lesion-labels lesion_mask.nii.gz \
+  --labels 1 --output-dir prepared_case
+strokefill-inpaint --prepared prepared_case --run /path/to/trained_run \
+  --output inpainted_T1.nii.gz
+```
+
+SimpleITK handles bias correction and affine alignment. Brain extraction runs in PyTorch. The template and skull-stripping weights are downloaded into a verified cache on first use; the trained inpainting checkpoint must be supplied separately. No ANTs, FreeSurfer, FSL, BrainSuite or Docker installation is needed. A reviewed brain mask can be supplied instead. Results are in template space. See the [external-data guide](docs/EXTERNAL_DATA.md) for offline use, inputs, QC and limitations.
+
 ## Training on an NVIDIA GPU
 
 The full training instructions target a computer with an **NVIDIA GeForce RTX 4090 graphics card (GPU)**. The model uses 96³ MRI patches. Smaller GPUs can run the software preflight but may not have enough memory or speed for full training. The guide explains installation, data setup, preflight, training, resume, validation, and inference: [4090 training guide](docs/NORMAL_PRIOR_4090.md).
