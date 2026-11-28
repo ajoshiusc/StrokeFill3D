@@ -1,6 +1,9 @@
 """Brain-normalized targets, whole-patch lesion exclusion, balanced domains."""
 
 import csv
+import collections
+import hashlib
+import json
 from pathlib import Path
 
 import nibabel as nib
@@ -149,3 +152,26 @@ def validate_splits(train, val, test):
                 if {r[key] for r in a} & {r[key] for r in b}:
                     raise ValueError(f"{key} leakage across splits")
     return groups
+
+
+def cohort_summary(directory, require_ready=True):
+    """Check the frozen full-cohort contract before a long run starts."""
+    directory = Path(directory)
+    meta = json.loads((directory / "dataset.json").read_text())
+    counts = {}
+    for split in ("train", "val", "test"):
+        path = directory / (split + ".csv")
+        counts[split] = dict(collections.Counter(r["domain"] for r in read_rows(path)))
+        if require_ready:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if meta.get("manifest_sha256", {}).get(split) != digest:
+                raise ValueError("Cohort manifest is incomplete or changed; rerun preparation/audit")
+    if require_ready:
+        if not meta.get("complete") or not meta.get("audit_complete"):
+            raise ValueError("Full-cohort preparation and patch audit must finish before training")
+        for domain in ("atlas", "episurg", "epibios", "arc"):
+            if counts["train"].get(domain, 0) < 10:
+                raise ValueError(f"Long run requires >=10 training subjects from {domain}; pilot manifest refused")
+            if min(counts[s].get(domain, 0) for s in ("val", "test")) < 2:
+                raise ValueError(f"Need separate validation and test subjects in {domain}")
+    return counts

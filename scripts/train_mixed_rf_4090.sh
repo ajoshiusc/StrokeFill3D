@@ -12,5 +12,5 @@ cd "$project_dir"
 export PYTHONPATH="$project_dir/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONUNBUFFERED=1
 exec python -m strokefill3d.mixed_rf.train --config configs/mixed_rf_4090.yaml \
-  --data "${STROKEFILL_MIXED_DATA:-/deneb_disk/data/stroke_inpainting/mixed_rf_v1}" \
+  --data "${STROKEFILL_MIXED_DATA:-/deneb_disk/data/stroke_inpainting/mixed_rf_v2}" \
   --output "$run_dir" --device cuda "$@"

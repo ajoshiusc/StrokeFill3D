@@ -28,16 +28,24 @@ from strokefill3d.normal_prior.io import (
 from strokefill3d.validation import reconstruction_metrics
 
 from .core import sample, velocity
-from .data import MixedPatches, observed_validation_target, validate_splits
+from .data import (
+    MixedPatches,
+    cohort_summary,
+    observed_validation_target,
+    validate_splits,
+)
 
 
 def fixed_validation(ds, count):
     cases = []
     for domain in ds.domains:
+        seen = set()
         sub = ds.datasets[domain]
         for i in range(count):
             for attempt in range(100):
                 case = sub[1000000 + i * 1009 + attempt * 101]
+                if case["source"] in seen:
+                    continue
                 try:
                     mask = cortical_mask(
                         case["target"],
@@ -51,6 +59,7 @@ def fixed_validation(ds, count):
                 case.update(mask=mask, domain=domain)
                 case["target"] = observed_validation_target(case, sub.rows)
                 cases.append(case)
+                seen.add(case["source"])
                 break
             else:
                 raise RuntimeError(f"Cannot build validation in {domain}")
@@ -167,8 +176,11 @@ def main():
     np.random.seed(cfg["seed"])
     train, val, test = [args.data / (s + ".csv") for s in ["train", "val", "test"]]
     validate_splits(train, val, test)
+    counts = cohort_summary(args.data, require_ready=not args.preflight)
+    print("COHORT", json.dumps(counts, sort_keys=True), flush=True)
     identity = {
         "version": "mixed_conditional_image_rf_3d_v1",
+        "cohort_counts": counts,
         "config": cfg,
         "functional_only": args.preflight or bool(args.patch_size),
         "data_hashes": {

@@ -21,10 +21,10 @@ git pull --ff-only
 python -m pip install -e . --no-deps
 ```
 
-No new dependencies are needed. The prepared shared dataset is already at
-`/deneb_disk/data/stroke_inpainting/mixed_rf_v1`. If the disk is mounted elsewhere,
-set `STROKEFILL_MIXED_DATA` and rewrite the paths in copies of the three CSV files
-for that mount. CSV file paths are absolute.
+No new training dependencies are needed. Full-cohort preparation writes the shared dataset to
+`/deneb_disk/data/stroke_inpainting/mixed_rf_v2`. If the disk is mounted elsewhere,
+prepare a new cohort at that mount using `STROKEFILL_MIXED_DATA`. CSV paths and
+completion hashes are frozen, so editing published CSV files is refused.
 
 First run the full 96³ functional check in its own directory:
 
@@ -37,11 +37,11 @@ training update, generation validation, and checkpoint saving. Its images use
 untrained weights. Never use its weights as a trained result.
 
 Start the long run in a persistent terminal session (for example, an existing
-`tmux` session). A new directory on the training computer keeps models separate
+`tmux` session). A new directory containing the host and timestamp keeps models separate
 from other computers and all previous runs:
 
 ```bash
-RUN="$HOME/strokefill-runs/mixed_rf96_$(hostname)_$(date +%Y%m%d_%H%M%S)"
+RUN="/deneb_disk/strokefill-runs/mixed_rf96_full_$(hostname)_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RUN"
 printf '%s\n' "$RUN"
 bash scripts/train_mixed_rf_4090.sh "$RUN" 2>&1 | tee "$RUN/train.log"
@@ -80,15 +80,50 @@ can be evaluated after model selection:
 bash scripts/train_mixed_rf_4090.sh "$RUN" --evaluate-test
 ```
 
-The current validation includes all four domains. The test set includes ATLAS
-and a separate ARC participant. More EPISURG/EPIBIOS participants are needed
-for a separate final test of those two domains; the present external sample is
-small and has already informed experiment design.
+The full cohort has separate participants for training, validation, and test in
+all four datasets. External splits use a reproducible 80/10/10 division; repeated
+scans from a person stay together and one scan is selected per person. The
+original ATLAS split is retained. These are development holdouts, not a claim of
+independent clinical validation.
+
+## Prepare the full cohort
+
+The earlier `mixed_rf_v1` was a pilot and is refused by the long-run launcher.
+The default is now `mixed_rf_v2`. Preparation discovers all labeled participants,
+with no subject cap. Scans without an injury label or a paired anatomical scan
+are listed in `inventory.json`; registration and target-sampling failures are
+recorded separately. Missing labels are never interpreted as normal brain.
+
+```bash
+python scripts/prepare_mixed_cohort.py \
+  --output /deneb_disk/data/stroke_inpainting/mixed_rf_v2 \
+  --synthstrip-weights /path/to/synthstrip.1.pt \
+  --template /path/to/MNI_T1.nii.gz \
+  --template-mask /path/to/MNI_brain_mask.nii.gz
+python scripts/audit_mixed_cohort.py \
+  --data /deneb_disk/data/stroke_inpainting/mixed_rf_v2
+```
+
+This uses the existing Python preprocessing dependencies. T2/FLAIR injury masks
+are registered to the same-session T1 using mutual information; T1 images then
+undergo brain extraction, N4 correction, and affine registration to the exact
+training grid. All supplied EPISURG rater masks are combined conservatively.
+ARC uses its supplied manual injury labels rather than automatic predictions.
+The audit checks four lesion-free 96-cube targets from every included scan and
+writes anatomical QC images under `qc/`. Review these images for registration
+and mask errors; automatic checks cannot prove that all injury is annotated.
+
+`dataset.json` contains final per-domain split counts, exclusions, completion
+status, and manifest hashes. The launcher requires the completed audit and
+checks hashes before starting. Preparation is resumable at completed subjects;
+published cohorts and existing checkpoints require a new directory for changes.
+Start a fresh run with the new cohort, using the command above. Do not resume a
+pilot checkpoint with changed manifests.
 
 ## Data rules
 
 - Half the requested patches come from ATLAS. The other half is shared across
-  EPISURG, EPIBIOS, and ARC. Within ARC the staged subset uses one scan per person.
+  EPISURG, EPIBIOS, and ARC. Each external cohort uses one scan per person.
 - The **entire target patch** must avoid every labeled lesion and a 5-mm 3D
   exclusion margin. This is stricter than masking the lesion out of the loss.
 - Brain-only intensity scaling uses p1/p99 of observed, lesion-excluded voxels.
@@ -98,12 +133,10 @@ small and has already informed experiment design.
   contours, placed over normal-appearing cortical regions. No ellipse fallback
   is used. Mild gamma/gain augmentation is retained. The tested combined
   histogram/bias-field augmentation reduced the 2D gain, so it is excluded.
-- The existing ARC derivatives contain automatically predicted stroke masks,
-  not verified manual annotations. Missed lesions can still contaminate targets
-  despite the margin. Review the staged mask overlays and replace inaccurate
-  exclusions before a definitive run. `dataset.json` records this provenance.
+- Supplied injury annotations may miss abnormal tissue. Review the QC overlays;
+  the exclusion margin cannot compensate for an entirely missing lesion.
 - Data, manifests and checkpoints stay outside Git. The staging script is
-  `scripts/prepare_mixed_rf.py`; it never uses already inpainted MRI as targets.
+  `scripts/prepare_mixed_cohort.py`; it never uses already inpainted MRI as targets.
 
 ## Inpaint with the new model
 
